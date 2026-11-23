@@ -195,3 +195,34 @@ kAIRON/
    - `run_backend.bat` & `run_backend.ps1`: Automatically activates `backend/venv/Scripts/python.exe` and launches Uvicorn on port 8000.
    - `run_frontend.bat` & `run_frontend.ps1`: Automatically starts Next.js development server on port 3000.
 3. Updated launch commands in README.md.
+
+---
+
+## Upgrade: Authentic Real-Market Data Engine & TradingView Institutional Canvas
+- **Timestamp**: 2026-11-23T13:02:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### 1. Authentic Real-Market Data Engine:
+- Integrated live exchange and interbank data via `yfinance` directly into `backend/core/data_loader.py`.
+- Benchmark symbols mapped:
+  - `XAUUSD`: Benchmark CME Comex Gold Futures (`GC=F`) with live prices ~$3,625 / oz.
+  - `EURUSD`: Interbank Euro / US Dollar (`EURUSD=X`).
+  - `GBPUSD`: British Pound / US Dollar (`GBPUSD=X`).
+  - `BTCUSD`: Bitcoin / US Dollar (`BTC-USD`).
+- Real-time caching into fast Parquet files (`backend/data/{symbol}_{timeframe}_{days}d.parquet`).
+- Deterministic fallback retained strictly for offline failover.
+
+### 2. Institutional Financial Chart Canvas:
+- Upgraded `frontend/src/components/Chart.tsx`:
+  - **Volume Histogram Series**: Added lower pane volume bars with green/red matching candle delta opacity.
+  - **Exponential Moving Averages**: Real-time calculated 20 EMA (Cyan) and 50 EMA (Amber).
+  - **On-Chart Indicator Toolbar**: Instant toggles for Volume (`Vol`), 20 EMA, 50 EMA, Order Block Ceiling/Floor zones (`OB`), and full zoom fit (`Fit`).
+  - **Interactive Crosshair HUD**: TradingView-grade header displaying hovered bar Date/Time, Open, High, Low, Close, Volume, Dollar Change, and Percentage Change.
+  - **Live Spot Price Badge**: Flashing green badge with real exchange Bid/Ask quotes.
+
+### 3. Historical Depth & Timeframe Controls:
+- Upgraded `frontend/src/components/Controls.tsx`:
+  - **Multi-Resolution Bar Selectors**: `1m`, `5m`, `15m`, `1h`, `1D`.
+  - **Historical Depth Selectors**: `7D`, `30D`, `60D`, `90D`, `1 Year`.
+  - **Multi-Market Instruments**: `XAUUSD (Gold)`, `EURUSD`, `GBPUSD`, `BTCUSD`.
+  - **Real-Time Live Streaming Toggle**: Switches between historical backtesting and active tick stream.

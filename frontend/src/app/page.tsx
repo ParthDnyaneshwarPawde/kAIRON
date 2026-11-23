@@ -97,6 +97,7 @@ export default function Home() {
         lookback: params.lookback.toString(),
         rr_target: params.rr_target.toString(),
         spread: params.spread.toString(),
+        days: params.days.toString(),
       });
 
       const response = await fetch(`${BACKEND_URL}/api/export/csv?${query.toString()}`);

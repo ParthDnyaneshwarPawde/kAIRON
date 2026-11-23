@@ -5,6 +5,8 @@ export interface CandleData {
   low: number;
   close: number;
   volume?: number;
+  ema20?: number;
+  ema50?: number;
 }
 
 export interface MarkerData {
@@ -67,6 +69,7 @@ export interface SimulationParams {
   rr_target: number;
   spread: number;
   days: number;
+  dataSource?: 'REAL_FEED' | 'MT5';
 }
 
 export interface SimulationResponse {

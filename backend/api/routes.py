@@ -23,12 +23,12 @@ LAST_SIMULATION: Dict[str, Any] = {
 }
 
 class SimulateRequest(BaseModel):
-    symbol: str = Field(default="XAUUSD", description="Market symbol e.g. XAUUSD, EURUSD")
-    timeframe: str = Field(default="15m", description="Bar timeframe: 1m, 5m, 15m, 1h")
+    symbol: str = Field(default="XAUUSD", description="Market symbol e.g. XAUUSD, EURUSD, GBPUSD, BTCUSD")
+    timeframe: str = Field(default="15m", description="Bar timeframe: 1m, 5m, 15m, 1h, 1d")
     lookback: int = Field(default=5, ge=2, le=30, description="Pivot lookback bars")
     rr_target: float = Field(default=2.5, ge=0.5, le=10.0, description="Dynamic Risk-to-Reward ratio")
     spread: float = Field(default=0.25, ge=0.0, le=5.0, description="Broker spread in quote points")
-    days: int = Field(default=35, ge=5, le=120, description="Days of historical data")
+    days: int = Field(default=30, ge=3, le=365, description="Days of historical data")
 
 @router.post("/simulate")
 async def simulate(req: SimulateRequest):

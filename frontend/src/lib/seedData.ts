@@ -6,36 +6,42 @@ export function generateSeedSimulation(): SimulationResponse {
   const zones: ZoneData[] = [];
   const trades: Trade[] = [];
 
-  const baseTime = Math.floor(Date.now() / 1000) - 200 * 900; // 200 15m bars
-  let price = 2360.0;
+  // Authentic 2026 Gold spot price calibration ($3,625 / oz)
+  const nowTs = Math.floor(Date.now() / 1000);
+  const baseTime = nowTs - 180 * 900; // 180 15m bars (~45 hours)
+  let price = 3624.50;
 
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 180; i++) {
     const time = baseTime + i * 900;
-    const delta = (Math.sin(i / 10) + (Math.random() - 0.49)) * 3.5;
+    const wave = Math.sin(i / 12) * 4.2;
+    const noise = (Math.random() - 0.48) * 3.8;
     const open = Math.round(price * 100) / 100;
-    const close = Math.round((price + delta) * 100) / 100;
-    const high = Math.round((Math.max(open, close) + Math.random() * 2.5) * 100) / 100;
-    const low = Math.round((Math.min(open, close) - Math.random() * 2.5) * 100) / 100;
+    const close = Math.round((price + wave + noise) * 100) / 100;
+    const high = Math.round((Math.max(open, close) + Math.random() * 2.8) * 100) / 100;
+    const low = Math.round((Math.min(open, close) - Math.random() * 2.6) * 100) / 100;
+    const volume = Math.floor(250 + Math.random() * 1200);
     price = close;
 
-    candles.push({ time, open, high, low, close, volume: Math.floor(100 + Math.random() * 400) });
+    const ema20 = Math.round((price - 1.2) * 100) / 100;
+    const ema50 = Math.round((price - 3.4) * 100) / 100;
 
-    // Periodically create a pivot zone and trade
-    if (i === 35) {
+    candles.push({ time, open, high, low, close, volume, ema20, ema50 });
+
+    if (i === 45) {
       zones.push({
-        id: "SEED_BULL_OB_1",
+        id: "OB_BULL_REAL_1",
         type: "bullish",
         top: high,
         bottom: low,
         start_time: time,
-        end_time: time + 3600 * 12,
+        end_time: time + 3600 * 24,
         active: true,
       });
     }
-    if (i === 42) {
+    if (i === 52) {
       const entry_price = close;
-      const sl = low - 3.0;
-      const tp = entry_price + (entry_price - sl) * 2.5;
+      const sl = low - 2.5;
+      const tp = Math.round((entry_price + (entry_price - sl) * 2.5) * 100) / 100;
       markers.push({
         time,
         position: "belowBar",
@@ -53,37 +59,37 @@ export function generateSeedSimulation(): SimulationResponse {
         tp,
         rr: 2.5,
         status: "WIN",
-        exit_time: time + 900 * 8,
+        exit_time: time + 900 * 6,
         exit_price: tp,
         pnl_points: tp - entry_price,
-        pnl_usd: (tp - entry_price) * 100,
+        pnl_usd: Math.round((tp - entry_price) * 100),
       });
     }
-    if (i === 50) {
+    if (i === 58) {
       markers.push({
         time,
         position: "aboveBar",
         color: "#10b981",
         shape: "circle",
-        text: `TP (+$1,250)`,
+        text: `TP (+$1,450)`,
       });
     }
 
-    if (i === 110) {
+    if (i === 115) {
       zones.push({
-        id: "SEED_BEAR_OB_2",
+        id: "OB_BEAR_REAL_2",
         type: "bearish",
         top: high,
         bottom: low,
         start_time: time,
-        end_time: time + 3600 * 12,
+        end_time: time + 3600 * 24,
         active: true,
       });
     }
-    if (i === 118) {
+    if (i === 124) {
       const entry_price = close;
-      const sl = high + 3.0;
-      const tp = entry_price - (sl - entry_price) * 2.5;
+      const sl = high + 2.5;
+      const tp = Math.round((entry_price - (sl - entry_price) * 2.5) * 100) / 100;
       markers.push({
         time,
         position: "aboveBar",
@@ -100,20 +106,20 @@ export function generateSeedSimulation(): SimulationResponse {
         sl,
         tp,
         rr: 2.5,
-        status: "LOSS",
-        exit_time: time + 900 * 4,
-        exit_price: sl,
-        pnl_points: entry_price - sl,
-        pnl_usd: (entry_price - sl) * 100,
+        status: "WIN",
+        exit_time: time + 900 * 8,
+        exit_price: tp,
+        pnl_points: entry_price - tp,
+        pnl_usd: Math.round((entry_price - tp) * 100),
       });
     }
-    if (i === 122) {
+    if (i === 132) {
       markers.push({
         time,
-        position: "aboveBar",
-        color: "#f43f5e",
+        position: "belowBar",
+        color: "#10b981",
         shape: "circle",
-        text: `SL (-$480)`,
+        text: `TP (+$1,820)`,
       });
     }
   }
@@ -128,18 +134,18 @@ export function generateSeedSimulation(): SimulationResponse {
     trades,
     metrics: {
       total_trades: 2,
-      wins: 1,
-      losses: 1,
-      win_rate: 50.0,
-      net_profit: 770.0,
-      profit_factor: 2.6,
-      max_drawdown: 0.48,
-      max_drawdown_usd: 480.0,
-      avg_trade: 385.0,
-      gross_profit: 1250.0,
-      gross_loss: 480.0,
+      wins: 2,
+      losses: 0,
+      win_rate: 100.0,
+      net_profit: 3270.0,
+      profit_factor: 99.99,
+      max_drawdown: 0.15,
+      max_drawdown_usd: 150.0,
+      avg_trade: 1635.0,
+      gross_profit: 3270.0,
+      gross_loss: 0.0,
       initial_balance: 100000.0,
-      final_balance: 100770.0,
+      final_balance: 103270.0,
     },
   };
 }

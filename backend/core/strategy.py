@@ -37,8 +37,10 @@ def run_pivot_order_block_simulation(
     df = df.copy().reset_index(drop=True)
     n = len(df)
     
-    # Calculate ATR
+    # Calculate ATR and EMAs for institutional indicators
     df["atr"] = calculate_atr(df, 14)
+    df["ema20"] = df["close"].ewm(span=20, adjust=False).mean()
+    df["ema50"] = df["close"].ewm(span=50, adjust=False).mean()
     
     # Timestamp array in unix seconds
     timestamps = [int(pd.to_datetime(t).timestamp()) for t in df["time"]]
@@ -341,7 +343,7 @@ def run_pivot_order_block_simulation(
         active_short["status"] = "WIN" if pnl_pts > 0 else "LOSS"
         trades.append(active_short)
         
-    # Format candles for Lightweight Charts
+    # Format candles for Lightweight Charts with Volume and EMAs
     candles = []
     for i in range(n):
         candles.append({
@@ -350,7 +352,9 @@ def run_pivot_order_block_simulation(
             "high": float(df.at[i, "high"]),
             "low": float(df.at[i, "low"]),
             "close": float(df.at[i, "close"]),
-            "volume": float(df.at[i, "volume"])
+            "volume": float(df.at[i, "volume"]) if "volume" in df.columns else 100.0,
+            "ema20": round(float(df.at[i, "ema20"]), 2),
+            "ema50": round(float(df.at[i, "ema50"]), 2)
         })
         
     # Ensure markers are strictly sorted by time ascending (requirement of lightweight-charts)
