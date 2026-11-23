@@ -54,7 +54,7 @@ const Chart = dynamic(() => import("@/components/Chart"), {
   ),
 });
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
 export default function Home() {
   // Navigation View: "chart" (Big Screen TradingView) or "strategy_tester" (Dedicated Backtest Tab)

@@ -20,6 +20,7 @@ import {
   Target,
   Settings,
   SlidersHorizontal,
+  AlertCircle,
 } from "lucide-react";
 import { PivotOBSettingsModal } from "@/components/PivotOBSettingsModal";
 import { PivotOBConfig, DEFAULT_PIVOT_OB_CONFIG } from "@/lib/pivotOB";
@@ -90,7 +91,7 @@ interface PreviewStats {
   sample_zones: ZoneSample[];
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
 export const AIDataSheetModal: React.FC<AIDataSheetModalProps> = ({
   isOpen,
@@ -116,6 +117,7 @@ export const AIDataSheetModal: React.FC<AIDataSheetModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<"zones" | "bars" | "ai_guide">("zones");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewStats | null>(null);
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
   const [downloadingType, setDownloadingType] = useState<string | null>(null);
@@ -137,16 +139,30 @@ export const AIDataSheetModal: React.FC<AIDataSheetModalProps> = ({
   // Fetch preview data whenever parameters or indicator settings change
   const fetchPreview = async () => {
     setIsLoading(true);
+    setFetchError(null);
     try {
       const srcType = (pivotConfig.source || "Wicks").toLowerCase();
-      const url = `${BACKEND_URL}/api/export/ob-preview?symbol=${symbol}&timeframe=${timeframe}&days=${days}&left_len=${pivotConfig.leftLen}&right_len=${pivotConfig.rightLen}&source_type=${srcType}`;
-      const res = await fetch(url);
-      if (res.ok) {
+      const endpoint = `/api/export/ob-preview?symbol=${symbol}&timeframe=${timeframe}&days=${days}&left_len=${pivotConfig.leftLen}&right_len=${pivotConfig.rightLen}&source_type=${srcType}`;
+      
+      let res;
+      try {
+        // Try relative URL (Next.js proxy rewrite)
+        res = await fetch(endpoint);
+      } catch {
+        // Fallback to absolute backend URL
+        res = await fetch(`${BACKEND_URL}${endpoint}`);
+      }
+
+      if (res && res.ok) {
         const data = await res.json();
         setPreview(data);
+      } else {
+        const errText = res ? await res.text() : "No response from backend";
+        setFetchError(`Preview error: ${errText}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to load export preview", e);
+      setFetchError(e.message || "Failed to connect to backend engine.");
     } finally {
       setIsLoading(false);
     }
@@ -165,8 +181,14 @@ export const AIDataSheetModal: React.FC<AIDataSheetModalProps> = ({
     setDownloadingType(typeKey);
     try {
       const srcType = (pivotConfig.source || "Wicks").toLowerCase();
-      const url = `${BACKEND_URL}/api/export/${endpoint}?symbol=${symbol}&timeframe=${timeframe}&days=${days}&left_len=${pivotConfig.leftLen}&right_len=${pivotConfig.rightLen}&source_type=${srcType}`;
-      const response = await fetch(url);
+      const queryPath = `/api/export/${endpoint}?symbol=${symbol}&timeframe=${timeframe}&days=${days}&left_len=${pivotConfig.leftLen}&right_len=${pivotConfig.rightLen}&source_type=${srcType}`;
+      
+      let response;
+      try {
+        response = await fetch(queryPath);
+      } catch {
+        response = await fetch(`${BACKEND_URL}${queryPath}`);
+      }
       if (!response.ok) throw new Error("Download request failed");
 
       const blob = await response.blob();
@@ -370,6 +392,22 @@ Please perform an in-depth machine learning / pattern analysis:
 
         {/* Main Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col p-5 space-y-4">
+          {/* Error Banner if any */}
+          {fetchError && (
+            <div className="bg-[#f23645]/15 border border-[#f23645]/40 rounded-xl p-3 flex items-center justify-between text-xs text-rose-300">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 text-[#f23645] shrink-0" />
+                <span>{fetchError}</span>
+              </div>
+              <button
+                onClick={fetchPreview}
+                className="px-2.5 py-1 rounded bg-[#f23645]/30 hover:bg-[#f23645]/50 text-white font-bold transition-all text-[11px]"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Download Action Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {/* 1. Bar Feed CSV */}

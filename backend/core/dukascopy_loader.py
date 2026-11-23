@@ -92,19 +92,43 @@ def fetch_dukascopy_market_data(
         except Exception as e:
             logger.warning(f"Failed to read existing cache {cache_path}: {e}")
 
+    # 1b. For 1h, 4h, and 1d: Resample directly from the high-resolution 15m Dukascopy dataset
+    if timeframe in ["1h", "4h", "1d"]:
+        df_15m = fetch_dukascopy_market_data(symbol=symbol, timeframe="15m", days=days, target_price=target_price)
+        if df_15m is not None and len(df_15m) > 10:
+            df_resampled = df_15m.copy()
+            df_resampled["time"] = pd.to_datetime(df_resampled["time"])
+            df_resampled = df_resampled.set_index("time")
+            resample_rule = "1h" if timeframe == "1h" else ("4h" if timeframe == "4h" else "1D")
+            df_agg = df_resampled.resample(resample_rule).agg({
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum"
+            }).dropna().reset_index()
+            decimals = 2 if "XAU" in clean_sym or "BTC" in clean_sym else 5
+            for col in ["open", "high", "low", "close"]:
+                df_agg[col] = df_agg[col].round(decimals)
+            try:
+                df_agg.to_csv(cache_path, compression="gzip", index=False)
+            except Exception:
+                pass
+            return df_agg
+
     # 2. Check if pre-downloaded json file already exists in download/ or dukascopy_cache/
     from_str, to_str = get_dukascopy_dates(days=days)
     base_fn = f"{inst}_{tf}_{from_str}_{to_str}"
     json_path1 = os.path.join(CACHE_DIR, f"{base_fn}.json")
     json_path2 = os.path.join(CACHE_DIR, f"{base_fn}.json.json")
 
-    # Check common download locations
+    # Check common download locations (strictly matching timeframe)
     candidate_paths = [
         json_path1,
         json_path2,
         os.path.join("download", f"{inst}-{tf}-bid-{from_str}-{to_str}.json"),
-        os.path.join("download", f"xauusd-m15-bid-2024-08-20-2024-11-20.json") if days >= 60 and inst == "xauusd" else None,
-        os.path.join("download", f"xauusd-m15-bid-2024-10-20-2024-11-20.json") if days <= 35 and inst == "xauusd" else None,
+        os.path.join("download", f"xauusd-m15-bid-2024-08-20-2024-11-20.json") if days >= 60 and inst == "xauusd" and tf == "m15" else None,
+        os.path.join("download", f"xauusd-m15-bid-2024-10-20-2024-11-20.json") if days <= 35 and inst == "xauusd" and tf == "m15" else None,
     ]
     candidate_paths = [p for p in candidate_paths if p and os.path.exists(p)]
 

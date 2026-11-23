@@ -225,8 +225,8 @@ def get_or_create_data(
     """
     parquet_path = os.path.join(DATA_DIR, f"{symbol}_{timeframe}_{days}d.parquet")
     
-    # 1. Recent Depth or Explicit biquote mode (<= 7 days and source='biquote'): use biquote's seamless MT5 broker feed
-    if source == "biquote" or (days <= 7 and source not in ["exchange", "dukascopy"]):
+    # 1. Real MT5 broker tick/minute feed (used for 1m, 5m tick charts or recent depth <= 7 days)
+    if source == "biquote" or timeframe in ["1m", "5m"] or (days <= 7 and source not in ["exchange", "dukascopy"]):
         df_bq = fetch_biquote_market_data(symbol=symbol, timeframe=timeframe, limit=350)
         if df_bq is not None and len(df_bq) > 10:
             return df_bq, f"biquote MT5 ({len(df_bq)} {timeframe} bars)"
