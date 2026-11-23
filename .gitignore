@@ -1,0 +1,33 @@
+# Virtual Environments
+venv/
+backend/venv/
+.env
+.env.local
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Node & Next.js
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+frontend/out/
+build/
+dist/
+
+# Parquet local data cache
+backend/data/*.parquet
+backend/data/*.tmp
+tick_vault_data/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
