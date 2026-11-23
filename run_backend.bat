@@ -1,7 +1,7 @@
 @echo off
 title kAIRON Backend Engine
 echo ========================================================
-echo  kAIRON - Market Simulation & Strategy Backtesting Engine
+echo  kAIRON - Market Simulation and Strategy Backtesting Engine
 echo ========================================================
 echo.
 
