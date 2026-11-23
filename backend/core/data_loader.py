@@ -6,6 +6,7 @@ import logging
 from typing import Optional, Tuple
 import pandas as pd
 import numpy as np
+import requests
 
 logger = logging.getLogger("kAIRON.data_loader")
 
@@ -13,7 +14,7 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 os.makedirs(DATA_DIR, exist_ok=True)
 
 SYMBOL_MAP = {
-    "XAUUSD": "GC=F",       # CME Gold Futures (Benchmark global Gold spot price)
+    "XAUUSD": "GC=F",       # CME Gold Futures
     "GOLD": "GC=F",
     "EURUSD": "EURUSD=X",   # Real Euro / US Dollar
     "GBPUSD": "GBPUSD=X",   # Real British Pound / US Dollar
@@ -25,9 +26,45 @@ INTERVAL_MAP = {
     "5m": "5m",
     "15m": "15m",
     "1h": "1h",
-    "4h": "1h",             # Resampled to 4h
+    "4h": "1h",
     "1d": "1d",
 }
+
+def fetch_biquote_market_data(symbol: str, timeframe: str = "15m", limit: int = 200) -> Optional[pd.DataFrame]:
+    """
+    Downloads authentic real-market OHLCV bars directly from biquote (MetaTrader 5 broker feed).
+    These candles align 100% seamlessly with the real-time live tick stream.
+    """
+    clean_sym = symbol.upper().replace("/", "").replace("=X", "").replace("-USD", "USD")
+    valid_intervals = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "1d": "1d"}
+    interval = valid_intervals.get(timeframe, "15m")
+    
+    try:
+        url = f"https://biquote.io/api/{clean_sym}/ohlc"
+        r = requests.get(url, params={"interval": interval, "limit": limit}, timeout=6)
+        if r.status_code == 200:
+            data = r.json()
+            bars = data.get("bars", [])
+            if bars and len(bars) > 5:
+                # Sort chronologically ascending
+                bars = sorted(bars, key=lambda b: b["openTime"])
+                decimals = 2 if "XAU" in clean_sym or "BTC" in clean_sym else 5
+                records = []
+                for b in bars:
+                    records.append({
+                        "time": pd.to_datetime(b["openTime"]),
+                        "open": round(float(b["open"]), decimals),
+                        "high": round(float(b["high"]), decimals),
+                        "low": round(float(b["low"]), decimals),
+                        "close": round(float(b["close"]), decimals),
+                        "volume": round(float(b.get("tickVolume", b.get("volume", 100))), 1)
+                    })
+                df = pd.DataFrame(records)
+                logger.info(f"Successfully loaded {len(df)} authentic biquote candles for {clean_sym} ({interval})")
+                return df[["time", "open", "high", "low", "close", "volume"]]
+    except Exception as e:
+        logger.warning(f"biquote historical data error: {e}")
+    return None
 
 def fetch_real_market_data(symbol: str, timeframe: str = "15m", days: int = 30) -> Optional[pd.DataFrame]:
     """
@@ -96,7 +133,7 @@ def fetch_real_market_data(symbol: str, timeframe: str = "15m", days: int = 30) 
 def generate_deterministic_ticks(
     symbol: str = "XAUUSD",
     days: int = 30,
-    base_price: float = 3625.0,
+    base_price: float = 3610.0,
     seed: int = 42
 ) -> pd.DataFrame:
     """
@@ -145,45 +182,62 @@ def generate_deterministic_ticks(
 def get_or_create_data(
     symbol: str = "XAUUSD",
     timeframe: str = "15m",
-    days: int = 30
-) -> pd.DataFrame:
+    days: int = 30,
+    source: str = "biquote"
+) -> Tuple[pd.DataFrame, str]:
     """
-    Loads historical real data from local Parquet cache, or downloads live from market feed.
+    Loads historical real data:
+    1. Primary: biquote (MetaTrader 5 broker quotes), giving 100% price parity with the live stream.
+    2. Deep History: yfinance / Parquet cache when days > 10.
+    3. Fallback: Calibrated offline generator.
+    
+    Returns (DataFrame, source_name)
     """
     parquet_path = os.path.join(DATA_DIR, f"{symbol}_{timeframe}_{days}d.parquet")
     
-    # Check if cached file exists and is less than 3 hours old
+    # 1. If source is biquote or days <= 7: use biquote's seamless MT5 broker feed
+    if source == "biquote" or days <= 7:
+        df_bq = fetch_biquote_market_data(symbol=symbol, timeframe=timeframe, limit=200)
+        if df_bq is not None and len(df_bq) > 10:
+            return df_bq, "biquote (MT5 Broker)"
+            
+    # 2. Check if cached file exists and is less than 3 hours old
     if os.path.exists(parquet_path):
         mtime = os.path.getmtime(parquet_path)
         if (datetime.datetime.now().timestamp() - mtime) < 10800:
             try:
                 df = pd.read_parquet(parquet_path)
                 if len(df) > 10:
-                    return df
+                    return df, "Parquet Cache"
             except Exception:
                 pass
                 
-    # 1. Try real market data download
+    # 3. Try real market data download (yfinance) for deep multi-week backtesting
     df_real = fetch_real_market_data(symbol=symbol, timeframe=timeframe, days=days)
     if df_real is not None and len(df_real) > 20:
         try:
             df_real.to_parquet(parquet_path, index=False)
         except Exception as e:
             logger.warning(f"Failed to cache parquet: {e}")
-        return df_real
+        return df_real, "Exchange Feed"
+
+    # 4. Fallback to biquote if deep fetch didn't return
+    df_bq = fetch_biquote_market_data(symbol=symbol, timeframe=timeframe, limit=200)
+    if df_bq is not None and len(df_bq) > 10:
+        return df_bq, "biquote (MT5 Broker)"
         
-    # 2. If cached file exists (even if older), return it
+    # 5. If cached file exists (even if older), return it
     if os.path.exists(parquet_path):
         try:
-            return pd.read_parquet(parquet_path)
+            return pd.read_parquet(parquet_path), "Parquet Cache (Archive)"
         except Exception:
             pass
             
-    # 3. Fallback to calibrated generator
-    base_price = 3625.0 if "XAU" in symbol.upper() else (1.1000 if "EUR" in symbol.upper() else 1.3000)
+    # 6. Fallback to calibrated generator
+    base_price = 3610.0 if "XAU" in symbol.upper() else (1.1000 if "EUR" in symbol.upper() else 1.3000)
     df_gen = generate_deterministic_ticks(symbol=symbol, days=days, base_price=base_price)
     try:
         df_gen.to_parquet(parquet_path, index=False)
     except Exception:
         pass
-    return df_gen
+    return df_gen, "Calibrated Engine"

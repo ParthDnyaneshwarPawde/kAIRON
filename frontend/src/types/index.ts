@@ -76,6 +76,7 @@ export interface SimulationResponse {
   status: string;
   symbol: string;
   timeframe: string;
+  source?: string;
   candles: CandleData[];
   markers: MarkerData[];
   zones: ZoneData[];

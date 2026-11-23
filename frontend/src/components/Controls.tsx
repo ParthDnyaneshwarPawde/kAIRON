@@ -35,10 +35,10 @@ export const Controls: React.FC<ControlsProps> = ({
   };
 
   const markets = [
-    { id: "XAUUSD", label: "XAU/USD", desc: "Gold", source: "CME Comex GC=F" },
-    { id: "EURUSD", label: "EUR/USD", desc: "Euro", source: "Interbank Forex" },
-    { id: "GBPUSD", label: "GBP/USD", desc: "Cable", source: "Interbank Forex" },
-    { id: "BTCUSD", label: "BTC/USD", desc: "Bitcoin", source: "Spot Crypto" },
+    { id: "XAUUSD", label: "XAU/USD", desc: "Gold", source: "biquote.io (MT5 Broker)" },
+    { id: "EURUSD", label: "EUR/USD", desc: "Euro", source: "biquote.io (MT5 Broker)" },
+    { id: "GBPUSD", label: "GBP/USD", desc: "Cable", source: "biquote.io (MT5 Broker)" },
+    { id: "BTCUSD", label: "BTC/USD", desc: "Bitcoin", source: "biquote.io (MT5 Broker)" },
   ];
 
   const timeframes = [

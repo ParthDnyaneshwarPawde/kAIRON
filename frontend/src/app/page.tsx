@@ -168,13 +168,13 @@ export default function Home() {
       setLiveTick(null);
     } else {
       setIsLiveActive(true);
-      const wsUrl = BACKEND_URL.replace("http://", "ws://").replace("https://", "wss://") + "/ws/live";
+      const wsUrl = BACKEND_URL.replace("http://", "ws://").replace("https://", "wss://") + `/ws/live?symbol=${params.symbol}`;
       try {
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
-          console.log("Connected to live WebSocket feed");
+          console.log(`Connected to live WebSocket feed for ${params.symbol}`);
         };
 
         ws.onmessage = (event) => {

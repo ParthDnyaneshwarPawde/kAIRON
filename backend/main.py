@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import router as api_router
@@ -34,7 +34,8 @@ def root():
     return {
         "engine": "kAIRON",
         "status": "online",
-        "markets": ["XAUUSD", "EURUSD", "GBPUSD"],
+        "feed": "biquote.io (MT5 Broker 1)",
+        "markets": ["XAUUSD", "EURUSD", "GBPUSD", "BTCUSD"],
         "strategy": "Pivot Order Blocks (Dynamic ATR/RR)"
     }
 
@@ -43,17 +44,17 @@ def health():
     return {"status": "ok"}
 
 @app.websocket("/ws/live")
-async def websocket_live_feed(websocket: WebSocket):
+async def websocket_live_feed(websocket: WebSocket, symbol: str = Query(default="XAUUSD")):
     await websocket.accept()
-    logger.info("WebSocket client connected to live feed.")
+    logger.info(f"WebSocket client connected to live feed for {symbol}.")
     try:
         while True:
-            # Poll tick from MT5 (or mock live generator fallback)
-            tick = mt5_provider.get_tick("XAUUSD")
+            # Poll live tick from biquote / MT5
+            tick = mt5_provider.get_tick(symbol)
             await websocket.send_json(tick)
-            await asyncio.sleep(0.8)  # 800ms streaming cadence
+            await asyncio.sleep(0.7)  # 700ms streaming cadence
     except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected.")
+        logger.info(f"WebSocket client disconnected for {symbol}.")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
     finally:

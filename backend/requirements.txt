@@ -6,6 +6,8 @@ pyarrow>=17.0.0
 websockets>=13.0
 python-multipart>=0.0.12
 requests>=2.32.0
+biquote>=0.3.0
+yfinance>=0.2.40
 MetaTrader5>=5.0.45; platform_system == "Windows"
 tick-vault>=0.1.0
 pydantic>=2.8.0

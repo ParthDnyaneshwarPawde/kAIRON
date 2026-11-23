@@ -28,13 +28,19 @@ class SimulateRequest(BaseModel):
     lookback: int = Field(default=5, ge=2, le=30, description="Pivot lookback bars")
     rr_target: float = Field(default=2.5, ge=0.5, le=10.0, description="Dynamic Risk-to-Reward ratio")
     spread: float = Field(default=0.25, ge=0.0, le=5.0, description="Broker spread in quote points")
-    days: int = Field(default=30, ge=3, le=365, description="Days of historical data")
+    days: int = Field(default=30, ge=1, le=365, description="Days of historical data")
+    source: str = Field(default="biquote", description="Data source: 'biquote' (MT5 Broker) or 'auto'")
 
 @router.post("/simulate")
 async def simulate(req: SimulateRequest):
     try:
-        # 1. Fetch or create data
-        df = get_or_create_data(symbol=req.symbol, timeframe=req.timeframe, days=req.days)
+        # 1. Fetch or create data (biquote MT5 broker quotes by default)
+        df, data_source = get_or_create_data(
+            symbol=req.symbol,
+            timeframe=req.timeframe,
+            days=req.days,
+            source=req.source
+        )
         
         # 2. Run Pivot Order Blocks Strategy
         sim_res = run_pivot_order_block_simulation(
@@ -61,6 +67,7 @@ async def simulate(req: SimulateRequest):
             "status": "success",
             "symbol": req.symbol,
             "timeframe": req.timeframe,
+            "source": data_source,
             "candles": sim_res["candles"],
             "markers": sim_res["markers"],
             "zones": sim_res["zones"],
@@ -81,7 +88,7 @@ async def export_csv(
     # Check if we should re-run or use cache
     trades = LAST_SIMULATION.get("trades", [])
     if not trades or LAST_SIMULATION.get("symbol") != symbol:
-        df = get_or_create_data(symbol=symbol, timeframe=timeframe, days=35)
+        df, _ = get_or_create_data(symbol=symbol, timeframe=timeframe, days=30, source="biquote")
         sim_res = run_pivot_order_block_simulation(
             df=df,
             symbol=symbol,
@@ -99,48 +106,38 @@ async def export_csv(
         "Trade ID",
         "Symbol",
         "Type",
-        "Entry Time (UTC)",
+        "Entry Time",
         "Entry Price",
         "Stop Loss",
         "Take Profit",
-        "Exit Time (UTC)",
+        "Risk-Reward Target",
+        "Exit Time",
         "Exit Price",
-        "PnL ($)",
-        "PnL (Points)",
-        "Status",
-        "Risk:Reward"
+        "PnL Points",
+        "PnL USD",
+        "Status"
     ])
     
     for t in trades:
-        entry_ts = t.get("entry_time")
-        exit_ts = t.get("exit_time")
-        entry_str = datetime.datetime.utcfromtimestamp(entry_ts).strftime("%Y-%m-%d %H:%M:%S") if entry_ts else ""
-        exit_str = datetime.datetime.utcfromtimestamp(exit_ts).strftime("%Y-%m-%d %H:%M:%S") if exit_ts else ""
-        
         writer.writerow([
             t.get("id"),
             t.get("symbol"),
             t.get("type"),
-            entry_str,
-            f"{t.get('entry_price', 0):.2f}",
-            f"{t.get('sl', 0):.2f}",
-            f"{t.get('tp', 0):.2f}",
-            exit_str,
-            f"{t.get('exit_price', 0):.2f}" if t.get('exit_price') else "",
-            f"{t.get('pnl_usd', 0):.2f}",
-            f"{t.get('pnl_points', 0):.2f}",
-            t.get("status"),
-            f"1:{t.get('rr', 0):.1f}"
+            datetime.datetime.fromtimestamp(t["entry_time"], tz=datetime.timezone.utc).isoformat() if t.get("entry_time") else "",
+            t.get("entry_price"),
+            t.get("sl"),
+            t.get("tp"),
+            t.get("rr"),
+            datetime.datetime.fromtimestamp(t["exit_time"], tz=datetime.timezone.utc).isoformat() if t.get("exit_time") else "",
+            t.get("exit_price", ""),
+            t.get("pnl_points", 0.0),
+            t.get("pnl_usd", 0.0),
+            t.get("status")
         ])
         
-    csv_bytes = output.getvalue().encode("utf-8")
-    filename = f"kAIRON_trades_{symbol}.csv"
-    
+    csv_data = output.getvalue()
     return Response(
-        content=csv_bytes,
+        content=csv_data,
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Access-Control-Expose-Headers": "Content-Disposition"
-        }
+        headers={"Content-Disposition": f"attachment; filename=kAIRON_trades_{symbol}.csv"}
     )
