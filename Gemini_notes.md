@@ -508,6 +508,19 @@ kAIRON/
    - Triggered immediate + secondary RAF ticks and a 60ms timeout whenever candles, configs, or toggles change, guaranteeing zones render when idle without requiring click-and-hold.
    - Added post-release redraw in `onMouseUpWrapper`.
 
+---
+
+## Cleanup: Removed Cluttered Legacy Order Block Price Line Badges
+- **Timestamp**: 2026-11-23T19:25:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### Changes:
+- **Removed Cluttered Axis Badges**:
+  - Completely stripped legacy `createPriceLine` calls that drew dashed lines across the entire chart and generated stacked red/green tags ("Bullish OB Top", "Bearish OB Bottom") on the right price scale.
+  - Left the right price axis 100% clean, dedicated only to the real-time asset price, crosshair levels, and custom indicator values.
+  - All Order Block analysis is now exclusively handled by the Pine Script v6 Pivot Order Block shaded rectangular zones and confirmed candlestick labels.
+
+
 
 
 

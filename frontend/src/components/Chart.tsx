@@ -153,7 +153,6 @@ export const Chart: React.FC<ChartProps> = ({
   const [showVolume, setShowVolume] = useState<boolean>(true);
   const [showEMA20, setShowEMA20] = useState<boolean>(true);
   const [showEMA50, setShowEMA50] = useState<boolean>(true);
-  const [showZones, setShowZones] = useState<boolean>(true);
   const [showTradeBoxes, setShowTradeBoxes] = useState<boolean>(true);
   const [showTradeMarkers, setShowTradeMarkers] = useState<boolean>(true);
 
@@ -1048,7 +1047,7 @@ export const Chart: React.FC<ChartProps> = ({
     }
   }, [markers, showTradeMarkers]);
 
-  // 4. Draw Order Block Zones
+  // 4. Ensure any legacy price lines are stripped cleanly
   useEffect(() => {
     if (!candleSeriesRef.current) return;
     priceLinesRef.current.forEach((line) => {
@@ -1057,35 +1056,7 @@ export const Chart: React.FC<ChartProps> = ({
       } catch {}
     });
     priceLinesRef.current = [];
-
-    if (!showZones || !zones || zones.length === 0) return;
-
-    zones.slice(-6).forEach((zone) => {
-      const isBull = zone.type === "bullish";
-      const color = isBull ? "rgba(8, 153, 129, 0.75)" : "rgba(242, 54, 69, 0.75)";
-
-      const topLine = candleSeriesRef.current?.createPriceLine({
-        price: zone.top,
-        color,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: `${isBull ? "Bullish" : "Bearish"} OB Top`,
-      });
-
-      const bottomLine = candleSeriesRef.current?.createPriceLine({
-        price: zone.bottom,
-        color,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: `${isBull ? "Bullish" : "Bearish"} OB Bottom`,
-      });
-
-      if (topLine) priceLinesRef.current.push(topLine);
-      if (bottomLine) priceLinesRef.current.push(bottomLine);
-    });
-  }, [zones, showZones]);
+  }, []);
 
   // 5. Live Tick Update (Tick-based aggregation for 1m, 5m, 15m, 1h)
   useEffect(() => {
