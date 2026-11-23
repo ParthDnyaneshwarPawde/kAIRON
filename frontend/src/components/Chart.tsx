@@ -576,9 +576,9 @@ export const Chart: React.FC<ChartProps> = ({
   const precision = isForex ? 5 : 2;
 
   return (
-    <div className="relative w-full h-full flex flex-col bg-[#131722] rounded-xl border border-[#2a2e39] overflow-hidden shadow-2xl select-none group">
+    <div className="relative w-full h-full flex flex-col bg-[#131722] overflow-hidden select-none group">
       {/* TradingView Top Chart Bar: HUD & Indicators */}
-      <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-[#131722] border-b border-[#2a2e39] text-xs z-10 gap-2">
+      <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-[#131722] border-b border-[#2a2e39] text-xs z-10 gap-2 shrink-0">
         {/* Left: Symbol & Crosshair HUD Values */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center space-x-1.5 font-bold text-white">
@@ -645,8 +645,8 @@ export const Chart: React.FC<ChartProps> = ({
         </div>
       </div>
 
-      {/* Main Canvas Container */}
-      <div ref={containerRef} className="flex-1 w-full min-h-[460px] relative" />
+      {/* Main Canvas Container (Takes 100% Full Height) */}
+      <div ref={containerRef} className="flex-1 w-full h-full min-h-0 relative" />
 
       {/* Floating TradingView Chart Navigation Toolbar (Bottom-Right) */}
       <div className="absolute bottom-4 right-4 flex items-center space-x-1 bg-[#1e222d]/90 backdrop-blur-md border border-[#2a2e39] rounded-lg p-1 shadow-xl z-20 opacity-80 group-hover:opacity-100 transition-opacity">

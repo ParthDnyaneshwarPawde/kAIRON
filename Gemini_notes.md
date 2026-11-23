@@ -320,5 +320,29 @@ kAIRON/
   3. **Local MT5 Historical Cache**:
      - When local MetaTrader 5 is installed, `mt5.copy_rates_from_pos()` can pull up to 100,000 broker bars directly from the user's broker of choice.
 
+---
+
+## Upgrade: TradingView Big Screen Terminal & Dedicated Strategy Tester Studio
+- **Timestamp**: 2026-11-23T14:51:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### 1. Dual-View Architecture (Chart Terminal vs. Strategy Tester):
+- Added dedicated top navigation tab switcher:
+  - **`Chart Terminal`**: High-resolution, full-screen TradingView canvas occupying 100% of viewport height and width.
+  - **`Strategy Tester`**: Dedicated quantitative analysis studio containing interactive parameter sliders (Lookback, Risk-Reward, Spread, Depth), visual cumulative equity curve ($100k baseline), performance KPI ribbon, and complete trade execution log.
+
+### 2. TradingView Native Chrome Components:
+- **Collapsible Right Watchlist ([Watchlist.tsx](file:///g:/React/kAIRON/frontend/src/components/Watchlist.tsx))**:
+  - Live watchlist panel for `XAU/USD` (Gold), `EUR/USD`, `GBP/USD`, `BTC/USD`, `USD/JPY`, `AUD/USD`, `ETH/USD`, `US100`, `US500`.
+  - Shows real-time Bid/Ask quotes, 24h Change %, category filtering (Forex, Metals, Crypto, Indices), and active symbol badge.
+  - Instant 1-click symbol switching that updates chart and restarts websocket live stream.
+  - Collapsible with 1-click (`Watchlist` button) for true 100% edge-to-edge chart viewing.
+- **Left Vertical Toolbar ([LeftToolbar.tsx](file:///g:/React/kAIRON/frontend/src/components/LeftToolbar.tsx))**:
+  - Tool strip: Crosshair cursor, Trendline tool, Order Block zone inspector, Risk-Reward position calculator, Measure ruler, Zoom In, Zoom Out, Auto Fit, and Jump to Real-Time bar.
+- **Bottom Dockable Strategy Tester Drawer**:
+  - Docked at the bottom of the chart: displays real-time backtest KPIs (`PnL`, `Win Rate`, `Trades`, `Max Drawdown`).
+  - Clicking expands a smooth 220px bottom drawer with recent trades; clicking again minimizes it so the chart has maximum vertical height.
+
+
 
 
