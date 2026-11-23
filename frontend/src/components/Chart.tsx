@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   createChart,
   ColorType,
@@ -11,12 +11,13 @@ import {
   UTCTimestamp,
   MouseEventParams,
 } from "lightweight-charts";
-import { CandleData, MarkerData, ZoneData, LiveTick } from "@/types";
+import { CandleData, MarkerData, ZoneData, Trade, LiveTick } from "@/types";
 import { 
   ZoomIn, 
   ZoomOut, 
   ChevronsRight, 
-  RotateCcw
+  RotateCcw,
+  Target
 } from "lucide-react";
 
 export interface ChartApi {
@@ -29,6 +30,8 @@ interface ChartProps {
   candles: CandleData[];
   markers: MarkerData[];
   zones: ZoneData[];
+  trades?: Trade[];
+  selectedTrade?: Trade | null;
   liveTick?: LiveTick | null;
   onChartReady?: (api: ChartApi) => void;
   symbol?: string;
@@ -39,12 +42,15 @@ export const Chart: React.FC<ChartProps> = ({
   candles,
   markers,
   zones,
+  trades = [],
+  selectedTrade = null,
   liveTick,
   onChartReady,
   symbol = "XAUUSD",
   timeframe = "15m",
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -59,11 +65,12 @@ export const Chart: React.FC<ChartProps> = ({
     onChartReadyRef.current = onChartReady;
   }, [onChartReady]);
 
-  // Indicator visibility toggles
+  // Indicator & Trade Box visibility toggles
   const [showVolume, setShowVolume] = useState<boolean>(true);
   const [showEMA20, setShowEMA20] = useState<boolean>(true);
   const [showEMA50, setShowEMA50] = useState<boolean>(true);
   const [showZones, setShowZones] = useState<boolean>(true);
+  const [showTradeBoxes, setShowTradeBoxes] = useState<boolean>(true);
 
   // HUD Bar Info for TradingView HUD
   const [hudData, setHudData] = useState<{
@@ -77,6 +84,123 @@ export const Chart: React.FC<ChartProps> = ({
     changePct: number;
     isUp: boolean;
   } | null>(null);
+
+  // Function to draw TradingView-style Green Target and Red Stop Loss areas
+  const drawTradeBoxes = useCallback(() => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas || !chartRef.current || !candleSeriesRef.current || !showTradeBoxes) {
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        ctx?.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Handle high DPI retina screens
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.floor(rect.width * dpr) || canvas.height !== Math.floor(rect.height * dpr)) {
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+    }
+    ctx.resetTransform();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    const timeScale = chartRef.current.timeScale();
+    const series = candleSeriesRef.current;
+
+    // Priority trades to render: selected trade first, plus recent trades
+    const activeTrades: Trade[] = [];
+    if (selectedTrade) {
+      activeTrades.push(selectedTrade);
+    }
+    if (trades && trades.length > 0) {
+      // Take the most recent 25 trades
+      trades.slice(-25).forEach((t) => {
+        if (!selectedTrade || t.id !== selectedTrade.id) {
+          activeTrades.push(t);
+        }
+      });
+    }
+
+    activeTrades.forEach((t) => {
+      const isSelected = selectedTrade?.id === t.id;
+      const x1Raw = timeScale.timeToCoordinate(t.entry_time as UTCTimestamp);
+      if (x1Raw === null) return; // Outside visible bounds
+      const x1 = Number(x1Raw);
+
+      const x2Raw = t.exit_time ? timeScale.timeToCoordinate(t.exit_time as UTCTimestamp) : null;
+      let x2 = x2Raw !== null ? Number(x2Raw) : x1 + (isSelected ? 90 : 55);
+      if (x2 <= x1) {
+        x2 = x1 + (isSelected ? 90 : 55);
+      }
+
+      const y_entry_raw = series.priceToCoordinate(t.entry_price);
+      const y_tp_raw = series.priceToCoordinate(t.tp);
+      const y_sl_raw = series.priceToCoordinate(t.sl);
+
+      if (y_entry_raw === null || y_tp_raw === null || y_sl_raw === null) return;
+
+      const y_entry = Number(y_entry_raw);
+      const y_tp = Number(y_tp_raw);
+      const y_sl = Number(y_sl_raw);
+
+      const isBuy = t.type === "BUY";
+      const width = Math.max(30, x2 - x1);
+
+      // 1. GREEN AREA (Profit Target / TP Zone)
+      const targetTop = isBuy ? y_tp : y_entry;
+      const targetHeight = Math.max(2, Math.abs(y_entry - y_tp));
+
+      ctx.fillStyle = isSelected ? "rgba(8, 153, 129, 0.35)" : "rgba(8, 153, 129, 0.18)";
+      ctx.fillRect(x1, targetTop, width, targetHeight);
+      ctx.strokeStyle = isSelected ? "rgba(8, 153, 129, 0.95)" : "rgba(8, 153, 129, 0.55)";
+      ctx.lineWidth = isSelected ? 1.5 : 1;
+      ctx.strokeRect(x1, targetTop, width, targetHeight);
+
+      // 2. RED AREA (Stop Loss / SL Zone)
+      const stopTop = isBuy ? y_entry : y_sl;
+      const stopHeight = Math.max(2, Math.abs(y_entry - y_sl));
+
+      ctx.fillStyle = isSelected ? "rgba(242, 54, 69, 0.35)" : "rgba(242, 54, 69, 0.18)";
+      ctx.fillRect(x1, stopTop, width, stopHeight);
+      ctx.strokeStyle = isSelected ? "rgba(242, 54, 69, 0.95)" : "rgba(242, 54, 69, 0.55)";
+      ctx.lineWidth = isSelected ? 1.5 : 1;
+      ctx.strokeRect(x1, stopTop, width, stopHeight);
+
+      // 3. Middle Entry Line
+      ctx.beginPath();
+      ctx.strokeStyle = isSelected ? "#38bdf8" : "rgba(255, 255, 255, 0.4)";
+      ctx.setLineDash([3, 3]);
+      ctx.moveTo(x1, y_entry);
+      ctx.lineTo(x1 + width, y_entry);
+      ctx.stroke();
+      ctx.setLineDash([]); // Reset line dash
+
+      // 4. Trade Labels & Badges
+      ctx.font = isSelected ? "bold 10px monospace" : "9px monospace";
+      
+      // TP Label
+      ctx.fillStyle = "#089981";
+      const tpText = isSelected ? `TP: ${t.tp.toFixed(2)} (+${t.rr.toFixed(1)}R)` : `TP`;
+      ctx.fillText(tpText, x1 + 4, targetTop + (isBuy ? 12 : targetHeight - 4));
+
+      // SL Label
+      ctx.fillStyle = "#f23645";
+      const slText = isSelected ? `SL: ${t.sl.toFixed(2)} (-1R)` : `SL`;
+      ctx.fillText(slText, x1 + 4, stopTop + (isBuy ? stopHeight - 4 : 12));
+
+      // Selected Trade Identifier Tag
+      if (isSelected) {
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillText(`${t.id} ${t.type} @ ${t.entry_price.toFixed(2)}`, x1 + 4, y_entry - 5);
+      }
+    });
+  }, [trades, selectedTrade, showTradeBoxes]);
 
   // 1. Initialize Chart ONCE per mount / symbol change
   useEffect(() => {
@@ -191,7 +315,6 @@ export const Chart: React.FC<ChartProps> = ({
     // Crosshair Hover Handler
     chart.subscribeCrosshairMove((param: MouseEventParams) => {
       if (!param.time || !param.seriesData || param.point === undefined) {
-        // Fallback to last candle info when mouse leaves
         if (lastCandleRef.current) {
           const last = lastCandleRef.current;
           const change = last.close - last.open;
@@ -246,11 +369,20 @@ export const Chart: React.FC<ChartProps> = ({
       }
     });
 
+    // Keep Trade Boxes aligned when panning or zooming
+    chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+      requestAnimationFrame(drawTradeBoxes);
+    });
+    chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+      requestAnimationFrame(drawTradeBoxes);
+    });
+
     // Resize Observer for auto-fitting canvas to container
     const resizeObserver = new ResizeObserver((entries) => {
       if (!entries || entries.length === 0 || !containerRef.current || !chartRef.current) return;
       const { width, height } = entries[0].contentRect;
       chartRef.current.applyOptions({ width, height });
+      requestAnimationFrame(drawTradeBoxes);
     });
     resizeObserver.observe(containerRef.current);
 
@@ -259,23 +391,25 @@ export const Chart: React.FC<ChartProps> = ({
       onChartReadyRef.current({
         scrollToTime: (targetTime: number) => {
           if (!chartRef.current || !candleSeriesRef.current) return;
-          // Find bar index
           const idx = candles.findIndex((c) => Math.abs(c.time - targetTime) <= 3600);
           if (idx !== -1) {
             chartRef.current.timeScale().setVisibleLogicalRange({
               from: Math.max(0, idx - 40),
               to: Math.min(candles.length + 10, idx + 40),
             });
+            requestAnimationFrame(drawTradeBoxes);
           }
         },
         fitContent: () => {
           if (chartRef.current) {
             chartRef.current.timeScale().fitContent();
+            requestAnimationFrame(drawTradeBoxes);
           }
         },
         jumpToLive: () => {
           if (chartRef.current && candles.length > 0) {
             chartRef.current.timeScale().scrollToPosition(-8, true);
+            requestAnimationFrame(drawTradeBoxes);
           }
         },
       });
@@ -290,7 +424,7 @@ export const Chart: React.FC<ChartProps> = ({
         chartRef.current = null;
       }
     };
-  }, [symbol, timeframe]); // ONLY depends on symbol and timeframe, NEVER candles or onChartReady!
+  }, [symbol, timeframe, drawTradeBoxes]);
 
   // 2. Load and update candles data
   useEffect(() => {
@@ -395,35 +529,38 @@ export const Chart: React.FC<ChartProps> = ({
       candleSeriesRef.current.setMarkers([]);
     }
 
-    // Smooth TradingView Viewport Framing:
-    // Deferred to next animation frame so lightweight-charts has computed bar layout coordinates!
+    // Smooth Viewport Framing
     requestAnimationFrame(() => {
       if (!chartRef.current) return;
       if (uniqueCandles.length <= 60) {
         chartRef.current.timeScale().fitContent();
       } else {
-        // Show recent ~70 candles with comfortable right offset
         const total = uniqueCandles.length;
         chartRef.current.timeScale().setVisibleLogicalRange({
           from: Math.max(0, total - 70),
           to: total + 8,
         });
       }
+      requestAnimationFrame(drawTradeBoxes);
     });
-  }, [candles, markers, timeframe]);
+  }, [candles, markers, timeframe, drawTradeBoxes]);
 
-  // 3. Sync Indicator Visibility
+  // 3. Redraw Trade Boxes on trade selection change
+  useEffect(() => {
+    requestAnimationFrame(drawTradeBoxes);
+  }, [trades, selectedTrade, showTradeBoxes, drawTradeBoxes]);
+
+  // 4. Sync Indicator Visibility
   useEffect(() => {
     volumeSeriesRef.current?.applyOptions({ visible: showVolume });
     ema20SeriesRef.current?.applyOptions({ visible: showEMA20 });
     ema50SeriesRef.current?.applyOptions({ visible: showEMA50 });
   }, [showVolume, showEMA20, showEMA50]);
 
-  // 4. Sync Order Block Zones Lines
+  // 5. Sync Order Block Zones Lines
   useEffect(() => {
     if (!candleSeriesRef.current) return;
 
-    // Remove old lines
     priceLinesRef.current.forEach((line) => {
       try {
         candleSeriesRef.current?.removePriceLine(line);
@@ -433,7 +570,6 @@ export const Chart: React.FC<ChartProps> = ({
 
     if (!showZones) return;
 
-    // Draw recent active Order Blocks
     const activeZones = (zones || []).filter((z) => z.active).slice(-6);
 
     activeZones.forEach((z) => {
@@ -466,19 +602,17 @@ export const Chart: React.FC<ChartProps> = ({
     });
   }, [zones, showZones]);
 
-  // 5. Handle Live WebSocket Ticks without destroying or resetting history
+  // 6. Handle Live WebSocket Ticks without destroying or resetting history
   useEffect(() => {
     if (!liveTick || !candleSeriesRef.current) return;
 
     const last = lastCandleRef.current;
     if (!last) return;
 
-    // Bar period in seconds
     const tfSec = timeframe === "1m" ? 60 : timeframe === "5m" ? 300 : timeframe === "15m" ? 900 : timeframe === "1h" ? 3600 : 86400;
     const currentBarPeriod = Math.floor(liveTick.time / tfSec) * tfSec;
 
     if (currentBarPeriod > last.time) {
-      // New bar formed
       const newCandle: CandleData = {
         time: currentBarPeriod,
         open: liveTick.bid,
@@ -500,7 +634,6 @@ export const Chart: React.FC<ChartProps> = ({
         });
       } catch {}
     } else {
-      // Update existing current bar
       const updatedCandle = {
         time: last.time as UTCTimestamp,
         open: last.open,
@@ -514,7 +647,6 @@ export const Chart: React.FC<ChartProps> = ({
       } catch {}
     }
 
-    // Update HUD with live price
     if (lastCandleRef.current) {
       const cur = lastCandleRef.current;
       const change = cur.close - cur.open;
@@ -544,6 +676,7 @@ export const Chart: React.FC<ChartProps> = ({
         from: center - span / 2,
         to: center + span / 2,
       });
+      requestAnimationFrame(drawTradeBoxes);
     }
   };
 
@@ -557,18 +690,21 @@ export const Chart: React.FC<ChartProps> = ({
         from: center - span / 2,
         to: center + span / 2,
       });
+      requestAnimationFrame(drawTradeBoxes);
     }
   };
 
   const handleFitContent = () => {
     if (chartRef.current) {
       chartRef.current.timeScale().fitContent();
+      requestAnimationFrame(drawTradeBoxes);
     }
   };
 
   const handleJumpToLatest = () => {
     if (chartRef.current) {
       chartRef.current.timeScale().scrollToPosition(-8, true);
+      requestAnimationFrame(drawTradeBoxes);
     }
   };
 
@@ -607,8 +743,20 @@ export const Chart: React.FC<ChartProps> = ({
           )}
         </div>
 
-        {/* Right: Clean Indicator Toggles */}
+        {/* Right: Clean Indicator & Risk-Reward Area Toggles */}
         <div className="flex items-center space-x-1 bg-[#1e222d] p-0.5 rounded border border-[#2a2e39]">
+          {/* TP/SL Green & Red Risk-Reward Box Toggle */}
+          <button
+            onClick={() => setShowTradeBoxes(!showTradeBoxes)}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all flex items-center space-x-1 ${
+              showTradeBoxes ? "bg-[#2962ff] text-white shadow-sm shadow-[#2962ff]/30" : "text-slate-500 hover:text-slate-300"
+            }`}
+            title="Toggle Green/Red TP and SL Risk-Reward Areas"
+          >
+            <Target className="w-3 h-3" />
+            <span>TP/SL Areas</span>
+          </button>
+
           <button
             onClick={() => setShowVolume(!showVolume)}
             className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
@@ -645,53 +793,62 @@ export const Chart: React.FC<ChartProps> = ({
         </div>
       </div>
 
-      {/* Main Canvas Container (Takes 100% Full Height) */}
-      <div ref={containerRef} className="flex-1 w-full h-full min-h-0 relative" />
+      {/* Main Canvas & Overlay Area */}
+      <div className="flex-1 w-full h-full min-h-0 relative">
+        {/* TradingView Candlestick Base Canvas */}
+        <div ref={containerRef} className="absolute inset-0 w-full h-full" />
 
-      {/* Floating TradingView Chart Navigation Toolbar (Bottom-Right) */}
-      <div className="absolute bottom-4 right-4 flex items-center space-x-1 bg-[#1e222d]/90 backdrop-blur-md border border-[#2a2e39] rounded-lg p-1 shadow-xl z-20 opacity-80 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={handleZoomIn}
-          className="p-1.5 rounded hover:bg-[#2a2e39] text-slate-300 hover:text-white transition-colors"
-          title="Zoom In (+)"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={handleZoomOut}
-          className="p-1.5 rounded hover:bg-[#2a2e39] text-slate-300 hover:text-white transition-colors"
-          title="Zoom Out (-)"
-        >
-          <ZoomOut className="w-3.5 h-3.5" />
-        </button>
-        <div className="h-3 w-px bg-[#2a2e39]" />
-        <button
-          onClick={handleFitContent}
-          className="px-2 py-1 rounded hover:bg-[#2a2e39] text-[10px] font-bold text-slate-300 hover:text-white transition-colors flex items-center space-x-1"
-          title="Fit All Candles"
-        >
-          <RotateCcw className="w-3 h-3" />
-          <span>Fit</span>
-        </button>
-        <button
-          onClick={handleJumpToLatest}
-          className="px-2 py-1 rounded bg-[#2962ff]/20 hover:bg-[#2962ff]/40 text-[#2962ff] text-[10px] font-bold transition-colors flex items-center space-x-1"
-          title="Jump to Real-Time Latest Bar"
-        >
-          <ChevronsRight className="w-3 h-3" />
-          <span>Latest</span>
-        </button>
-      </div>
+        {/* Dynamic Risk-to-Reward Green (TP) and Red (SL) Areas Canvas */}
+        <canvas
+          ref={overlayCanvasRef}
+          className="absolute inset-0 w-full h-full pointer-events-none z-10"
+        />
 
-      {/* Live Stream Price Badge (Top-Left of Canvas) */}
-      {liveTick && (
-        <div className="absolute top-10 left-3 flex items-center space-x-2 bg-[#1e222d]/80 backdrop-blur-md border border-[#2a2e39] rounded px-2 py-0.5 text-[11px] font-mono z-10 pointer-events-none">
-          <span className="w-2 h-2 rounded-full bg-[#089981] animate-ping" />
-          <span className="text-white font-bold">BID: {liveTick.bid.toFixed(precision)}</span>
-          <span className="text-slate-400">ASK: {liveTick.ask.toFixed(precision)}</span>
-          <span className="text-[9px] text-[#2962ff]">({liveTick.source})</span>
+        {/* Floating Navigation Toolbar (Bottom-Right) */}
+        <div className="absolute bottom-4 right-4 flex items-center space-x-1 bg-[#1e222d]/90 backdrop-blur-md border border-[#2a2e39] rounded-lg p-1 shadow-xl z-20 opacity-80 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={handleZoomIn}
+            className="p-1.5 rounded hover:bg-[#2a2e39] text-slate-300 hover:text-white transition-colors"
+            title="Zoom In (+)"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={handleZoomOut}
+            className="p-1.5 rounded hover:bg-[#2a2e39] text-slate-300 hover:text-white transition-colors"
+            title="Zoom Out (-)"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <div className="h-3 w-px bg-[#2a2e39]" />
+          <button
+            onClick={handleFitContent}
+            className="px-2 py-1 rounded hover:bg-[#2a2e39] text-[10px] font-bold text-slate-300 hover:text-white transition-colors flex items-center space-x-1"
+            title="Fit All Candles"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Fit</span>
+          </button>
+          <button
+            onClick={handleJumpToLatest}
+            className="px-2 py-1 rounded bg-[#2962ff]/20 hover:bg-[#2962ff]/40 text-[#2962ff] text-[10px] font-bold transition-colors flex items-center space-x-1"
+            title="Jump to Real-Time Latest Bar"
+          >
+            <ChevronsRight className="w-3 h-3" />
+            <span>Latest</span>
+          </button>
         </div>
-      )}
+
+        {/* Live Stream Price Badge (Top-Left) */}
+        {liveTick && (
+          <div className="absolute top-3 left-3 flex items-center space-x-2 bg-[#1e222d]/90 backdrop-blur-md border border-[#2a2e39] rounded px-2.5 py-1 text-xs font-mono z-20 pointer-events-none shadow-lg">
+            <span className="w-2 h-2 rounded-full bg-[#089981] animate-ping" />
+            <span className="text-white font-bold">BID: {liveTick.bid.toFixed(precision)}</span>
+            <span className="text-slate-400">ASK: {liveTick.ask.toFixed(precision)}</span>
+            <span className="text-[10px] text-[#2962ff]">({liveTick.source})</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

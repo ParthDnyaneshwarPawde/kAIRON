@@ -429,6 +429,8 @@ export default function Home() {
                   candles={data.candles}
                   markers={data.markers}
                   zones={data.zones}
+                  trades={data.trades}
+                  selectedTrade={selectedTrade}
                   liveTick={liveTick}
                   onChartReady={handleChartReady}
                   symbol={params.symbol}

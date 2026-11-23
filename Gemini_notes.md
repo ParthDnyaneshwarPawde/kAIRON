@@ -343,6 +343,28 @@ kAIRON/
   - Docked at the bottom of the chart: displays real-time backtest KPIs (`PnL`, `Win Rate`, `Trades`, `Max Drawdown`).
   - Clicking expands a smooth 220px bottom drawer with recent trades; clicking again minimizes it so the chart has maximum vertical height.
 
+---
+
+## Upgrade: TradingView Long/Short Position Tool (Green TP & Red SL Areas)
+- **Timestamp**: 2026-11-23T15:03:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### 1. Risk-to-Reward Trade Projection Areas:
+- Implemented high-DPI canvas overlay synchronized with TradingView's lightweight-charts coordinate engine:
+  - **Green Area (Take Profit / Target Zone)**:
+    - BUY trades: Extends from `entry_price` up to `tp`.
+    - SELL trades: Extends from `entry_price` down to `tp`.
+    - Shaded in transparent emerald (`rgba(8, 153, 129, 0.20)` / `0.35` on focus) with solid border and target label (`TP: +RR`).
+  - **Red Area (Stop Loss / Risk Zone)**:
+    - BUY trades: Extends from `entry_price` down to `sl`.
+    - SELL trades: Extends from `entry_price` up to `sl`.
+    - Shaded in transparent crimson (`rgba(242, 54, 69, 0.20)` / `0.35` on focus) with solid border and stop label (`SL: -1R`).
+  - **Middle Entry Line**: Dashed boundary separating risk from reward, labeled with entry price.
+  - **Time Projection**: Boxes span horizontally from `entry_time` across the trade's lifespan to `exit_time` (or current bar if open).
+- **Responsive Panning & Zooming**: Integrated with `subscribeVisibleTimeRangeChange` and `subscribeVisibleLogicalRangeChange` inside `requestAnimationFrame` for buttery-smooth 60fps tracking during canvas drag and mousewheel zoom.
+- **On-Chart Header Toggle**: Added `TP/SL Areas` toggle button to enable/disable trade boxes instantly.
+
+
 
 
 
