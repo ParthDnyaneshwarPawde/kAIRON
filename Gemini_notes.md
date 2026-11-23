@@ -393,6 +393,38 @@ kAIRON/
 - **1-Click Backtest Trade Selection**:
   - Clicking on any backtest trade box on the chart mounts that trade directly into the interactive position tool, letting the user inspect and adjust its parameters on the fly.
 
+---
+
+## Upgrade: Trade Markers Toggle, 1m/5m Tick Charts, Small Refresh Button, Viewport Stability & Live Candle Close Timer
+- **Timestamp**: 2026-11-23T16:05:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### 1. Hide/Show Trade Markers on Candlesticks:
+- Added dedicated `Trades (N)` toggle button in the top chart header toolbar.
+- 1-click instantly toggles all trade execution labels (`BUY @ price`, `SELL @ price`, `TP`, `SL`) on candlesticks off or on via `candleSeries.setMarkers([])`.
+- Works independently of the `TP/SL Areas` toggle, allowing full user customization (view clean raw price action, only TP/SL zones, only marker tags, or both).
+
+### 2. High-Frequency 1m & 5m Tick-Based Charts:
+- Enhanced `backend/core/data_loader.py` to route `1m` and `5m` requests directly to authentic biquote MT5 broker feed with a 400-bar limit (tested and verified: 301 real 1m bars and 289 real 5m bars loaded in < 1s).
+- Live tick streaming updates 1m (60-second) and 5m (300-second) candlesticks dynamically on every incoming tick.
+
+### 3. Non-Disturbing Screen Viewport on Data Refresh:
+- Resolved the screen-jumping issue on data refresh:
+  - Added viewport retention in `Chart.tsx` using `lastSymbolRef`, `lastTimeframeRef`, and `timeScale.getVisibleLogicalRange()`.
+  - When new historical data arrives or the user clicks refresh, the chart updates candle data seamlessly in place without resetting zoom or panning position.
+
+### 4. Small Quick Refresh Button:
+- Placed a compact `<RefreshCw />` button in the top chart header directly next to the symbol / timeframe badge.
+- Added a second quick-refresh button in the bottom-right floating navigation dock.
+
+### 5. Live Candle Countdown Timer:
+- Implemented real-time candle close timer calculating exact remaining seconds for the active timeframe (`1m`, `5m`, `15m`, `1h`, `1d`).
+- Ticks every second (`00:45` for 1m, `04:12` for 5m, `13:48` for 15m).
+- Rendered in two prominent locations:
+  - Top chart header bar badge: `⏱ Close in: mm:ss`.
+  - Floating live quote pill on chart: `LIVE: 3621.88 | Bid: ... Ask: ... | ⏱ mm:ss`.
+
+
 
 
 

@@ -22,7 +22,10 @@ import {
   Layers,
   ArrowUpRight,
   ArrowDownRight,
-  X
+  X,
+  RefreshCw,
+  Clock,
+  Tag
 } from "lucide-react";
 
 export interface ChartApi {
@@ -54,6 +57,8 @@ interface ChartProps {
   onChartReady?: (api: ChartApi) => void;
   symbol?: string;
   timeframe?: string;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 export const Chart: React.FC<ChartProps> = ({
@@ -66,6 +71,8 @@ export const Chart: React.FC<ChartProps> = ({
   onChartReady,
   symbol = "XAUUSD",
   timeframe = "15m",
+  onRefresh,
+  isRefreshing = false,
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -79,6 +86,11 @@ export const Chart: React.FC<ChartProps> = ({
   const lastCandleRef = useRef<CandleData | null>(null);
   const onChartReadyRef = useRef(onChartReady);
 
+  // Screen Stability: preserve zoom & scroll position across data pulls / background refreshes
+  const isFirstLoadRef = useRef<boolean>(true);
+  const lastSymbolRef = useRef<string>(symbol);
+  const lastTimeframeRef = useRef<string>(timeframe);
+
   // Keep latest onChartReady callback ref
   useEffect(() => {
     onChartReadyRef.current = onChartReady;
@@ -90,6 +102,7 @@ export const Chart: React.FC<ChartProps> = ({
   const [showEMA50, setShowEMA50] = useState<boolean>(true);
   const [showZones, setShowZones] = useState<boolean>(true);
   const [showTradeBoxes, setShowTradeBoxes] = useState<boolean>(true);
+  const [showTradeMarkers, setShowTradeMarkers] = useState<boolean>(true);
 
   // User Interactive Freely Draggable Position Tool
   const [userPosition, setUserPosition] = useState<InteractivePosition | null>(null);
@@ -127,6 +140,43 @@ export const Chart: React.FC<ChartProps> = ({
     initialBarIndex: 0,
     initialBarSpan: 14,
   });
+
+  // Live Candle Close Countdown Timer (TradingView Style)
+  const [candleCountdown, setCandleCountdown] = useState<string>("00:00");
+
+  useEffect(() => {
+    let tfSeconds = 900;
+    if (timeframe === "1m") tfSeconds = 60;
+    else if (timeframe === "5m") tfSeconds = 300;
+    else if (timeframe === "15m") tfSeconds = 900;
+    else if (timeframe === "1h") tfSeconds = 3600;
+    else if (timeframe === "1d") tfSeconds = 86400;
+
+    const calcTimer = () => {
+      const now = Math.floor(Date.now() / 1000);
+      const currentBucket = Math.floor(now / tfSeconds) * tfSeconds;
+      const nextClose = currentBucket + tfSeconds;
+      const diff = Math.max(0, nextClose - now);
+
+      const hours = Math.floor(diff / 3600);
+      const mins = Math.floor((diff % 3600) / 60);
+      const secs = diff % 60;
+
+      if (hours > 0) {
+        setCandleCountdown(
+          `${hours}:${mins < 10 ? "0" : ""}${mins}:${secs < 10 ? "0" : ""}${secs}`
+        );
+      } else {
+        setCandleCountdown(
+          `${mins < 10 ? "0" : ""}${mins}:${secs < 10 ? "0" : ""}${secs}`
+        );
+      }
+    };
+
+    calcTimer();
+    const timerId = setInterval(calcTimer, 1000);
+    return () => clearInterval(timerId);
+  }, [timeframe]);
 
   // HUD Bar Info for TradingView HUD
   const [hudData, setHudData] = useState<{
@@ -670,7 +720,7 @@ export const Chart: React.FC<ChartProps> = ({
     };
   }, [symbol, timeframe, drawTradeBoxes, createDraggablePosition, candles]);
 
-  // 2. Load Candles
+  // 2. Load Candles (Preserves Viewport / Zoom without disturbing the screen on refresh!)
   useEffect(() => {
     if (!candleSeriesRef.current || !candles || candles.length === 0) return;
 
@@ -732,8 +782,40 @@ export const Chart: React.FC<ChartProps> = ({
       ema50SeriesRef.current.setData(ema50Data);
     }
 
-    // Markers
-    if (markers && markers.length > 0) {
+    // Non-disturbing viewport update:
+    // Only adjust visible range if symbol/timeframe changed or if there is no range yet.
+    // If user is actively inspecting a chart, preserving their exact viewport!
+    requestAnimationFrame(() => {
+      if (!chartRef.current) return;
+      const timeScale = chartRef.current.timeScale();
+      const currentLogicalRange = timeScale.getVisibleLogicalRange();
+      const symbolOrTfChanged =
+        lastSymbolRef.current !== symbol || lastTimeframeRef.current !== timeframe;
+
+      lastSymbolRef.current = symbol;
+      lastTimeframeRef.current = timeframe;
+
+      if (isFirstLoadRef.current || symbolOrTfChanged || !currentLogicalRange) {
+        isFirstLoadRef.current = false;
+        if (uniqueCandles.length <= 60) {
+          timeScale.fitContent();
+        } else {
+          const total = uniqueCandles.length;
+          timeScale.setVisibleLogicalRange({
+            from: Math.max(0, total - 70),
+            to: total + 8,
+          });
+        }
+      }
+      requestAnimationFrame(drawTradeBoxes);
+    });
+  }, [candles, symbol, timeframe, drawTradeBoxes]);
+
+  // 3. Trade Markers (Controlled by showTradeMarkers toggle)
+  useEffect(() => {
+    if (!candleSeriesRef.current) return;
+
+    if (showTradeMarkers && markers && markers.length > 0) {
       const formattedMarkers = markers.map((m) => ({
         time: m.time as UTCTimestamp,
         position: m.position,
@@ -746,23 +828,9 @@ export const Chart: React.FC<ChartProps> = ({
     } else {
       candleSeriesRef.current.setMarkers([]);
     }
+  }, [markers, showTradeMarkers]);
 
-    requestAnimationFrame(() => {
-      if (!chartRef.current) return;
-      if (uniqueCandles.length <= 60) {
-        chartRef.current.timeScale().fitContent();
-      } else {
-        const total = uniqueCandles.length;
-        chartRef.current.timeScale().setVisibleLogicalRange({
-          from: Math.max(0, total - 70),
-          to: total + 8,
-        });
-      }
-      requestAnimationFrame(drawTradeBoxes);
-    });
-  }, [candles, markers, drawTradeBoxes]);
-
-  // 3. Draw Order Block Zones
+  // 4. Draw Order Block Zones
   useEffect(() => {
     if (!candleSeriesRef.current) return;
     priceLinesRef.current.forEach((line) => {
@@ -801,7 +869,7 @@ export const Chart: React.FC<ChartProps> = ({
     });
   }, [zones, showZones]);
 
-  // 4. Live Tick Update
+  // 5. Live Tick Update (Tick-based aggregation for 1m, 5m, 15m, 1h)
   useEffect(() => {
     if (!liveTick || !candleSeriesRef.current || !lastCandleRef.current) return;
 
@@ -862,7 +930,6 @@ export const Chart: React.FC<ChartProps> = ({
     const canvas = overlayCanvasRef.current;
     if (!canvas || !chartRef.current || !candleSeriesRef.current) return;
 
-    // If currently dragging, keep pointer-events active and let window handlers run
     if (dragRef.current.isDragging) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -990,7 +1057,6 @@ export const Chart: React.FC<ChartProps> = ({
           initialBarSpan: pos.barSpan,
         };
 
-        // Attach global drag move and end handlers
         const onGlobalMouseMove = (moveEvent: MouseEvent) => {
           if (!dragRef.current.isDragging || !dragRef.current.handle || !chartRef.current || !candleSeriesRef.current) return;
           const curPos = userPositionRef.current;
@@ -1023,7 +1089,6 @@ export const Chart: React.FC<ChartProps> = ({
               setUserPosition({ ...curPos, barSpan: newSpan });
             }
           } else if (activeHandle === "body") {
-            // Freely move the entire position tool across time and price
             const logical = tScale.coordinateToLogical(curMx as any);
             const newPrice = sSeries.coordinateToPrice(curMy as any);
 
@@ -1071,7 +1136,7 @@ export const Chart: React.FC<ChartProps> = ({
       }
     }
 
-    // If not clicked on a handle, check if clicked on any backtest trade box to select it
+    // Check if clicked on any backtest trade box to select it
     const clickedTradeEntry = tradeBoxesBoundsRef.current.find(
       (b) => mx >= b.x1 && mx <= b.x2 && my >= b.minY && my <= b.maxY
     );
@@ -1146,23 +1211,47 @@ export const Chart: React.FC<ChartProps> = ({
 
   return (
     <div className="relative w-full h-full flex flex-col bg-[#131722] overflow-hidden select-none group">
-      {/* TradingView Top Chart Bar: HUD & Indicators */}
+      {/* TradingView Top Chart Bar: HUD, Candle Countdown & Controls */}
       <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-[#131722] border-b border-[#2a2e39] text-xs z-20 gap-2 shrink-0">
-        {/* Left: Symbol & Crosshair HUD Values */}
+        {/* Left: Symbol, Resolution, Small Refresh & Crosshair HUD Values */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center space-x-1.5 font-bold text-white">
             <span className="text-[#38bdf8]">{symbol}</span>
-            <span className="text-slate-400 text-[11px] font-mono">{timeframe}</span>
+            <span className="text-slate-400 text-[11px] font-mono px-1 py-0.2 bg-[#1e222d] rounded border border-[#2a2e39]">
+              {timeframe}
+            </span>
+
+            {/* Small Quick Refresh Button */}
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#1e222d] border border-transparent hover:border-[#2a2e39] transition-all disabled:opacity-50"
+                title="Refresh Market Data (Preserves Screen Position)"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshing ? "animate-spin text-[#38bdf8]" : ""}`} />
+              </button>
+            )}
+          </div>
+
+          {/* Candle Close Countdown Timer */}
+          <div
+            className="flex items-center space-x-1 px-2 py-0.5 rounded bg-[#1e222d] border border-[#2a2e39] text-[#38bdf8] font-mono text-[11px] font-bold shadow-sm"
+            title={`Time until current ${timeframe} candle closes`}
+          >
+            <Clock className="w-3 h-3 text-[#38bdf8] animate-pulse" />
+            <span className="text-slate-400 text-[10px] hidden sm:inline">Close:</span>
+            <span className="text-white tracking-wider">{candleCountdown}</span>
           </div>
 
           {hudData && (
             <div className="flex items-center space-x-2 font-mono text-[11px] text-slate-300">
-              <span className="text-slate-500 hidden sm:inline">{hudData.timeStr}</span>
+              <span className="text-slate-500 hidden md:inline">{hudData.timeStr}</span>
               <span>O: <strong className={hudData.isUp ? "text-[#089981]" : "text-[#f23645]"}>{hudData.open.toFixed(2)}</strong></span>
               <span>H: <strong className="text-white">{hudData.high.toFixed(2)}</strong></span>
               <span>L: <strong className="text-white">{hudData.low.toFixed(2)}</strong></span>
               <span>C: <strong className={hudData.isUp ? "text-[#089981]" : "text-[#f23645]"}>{hudData.close.toFixed(2)}</strong></span>
-              <span className="hidden md:inline">Vol: <strong className="text-slate-400">{hudData.volume.toLocaleString()}</strong></span>
+              <span className="hidden lg:inline">Vol: <strong className="text-slate-400">{hudData.volume.toLocaleString()}</strong></span>
               <span className={`font-bold ${hudData.isUp ? "text-[#089981]" : "text-[#f23645]"}`}>
                 {hudData.change >= 0 ? "+" : ""}{hudData.change.toFixed(2)} ({hudData.changePercent.toFixed(2)}%)
               </span>
@@ -1170,7 +1259,7 @@ export const Chart: React.FC<ChartProps> = ({
           )}
         </div>
 
-        {/* Right: Clean Indicator & Risk-Reward Area Toggles */}
+        {/* Right: Clean Indicator, Trades Toggle & Risk-Reward Area Toggles */}
         <div className="flex items-center space-x-1 bg-[#1e222d] p-0.5 rounded border border-[#2a2e39]">
           {/* Add / Spawn Draggable Position Tool Button */}
           <button
@@ -1216,6 +1305,20 @@ export const Chart: React.FC<ChartProps> = ({
               </button>
             </div>
           )}
+
+          {/* BUTTON TO HIDE/SHOW TRADES ON CANDLES */}
+          <button
+            onClick={() => setShowTradeMarkers(!showTradeMarkers)}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all flex items-center space-x-1 ${
+              showTradeMarkers
+                ? "bg-[#2962ff] text-white shadow-sm shadow-[#2962ff]/30"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+            title="Toggle Trade Execution Labels on Candlesticks (BUY/SELL/TP/SL)"
+          >
+            <Tag className="w-3 h-3" />
+            <span>Trades ({markers.length})</span>
+          </button>
 
           {/* TP/SL Areas Toggle */}
           <button
@@ -1302,8 +1405,41 @@ export const Chart: React.FC<ChartProps> = ({
           className="absolute inset-0 w-full h-full z-10 pointer-events-none"
         />
 
+        {/* Floating Live Quote & Countdown Banner (Top-Left inside Chart) */}
+        {liveTick && (
+          <div className="absolute top-3 left-3 z-20 flex items-center space-x-2 bg-[#131722]/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-[#2a2e39] shadow-xl text-xs font-mono select-none">
+            <div className="flex items-center space-x-1.5 text-[#089981]">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#089981] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#089981]"></span>
+              </span>
+              <span className="font-bold">LIVE: {liveTick.last ? liveTick.last.toFixed(2) : ((liveTick.bid + liveTick.ask) / 2).toFixed(2)}</span>
+            </div>
+            <span className="text-slate-600">|</span>
+            <span className="text-slate-400 text-[11px]">
+              Bid: <strong className="text-white">{liveTick.bid.toFixed(2)}</strong> Ask: <strong className="text-white">{liveTick.ask.toFixed(2)}</strong>
+            </span>
+            <span className="text-slate-600">|</span>
+            <div className="flex items-center space-x-1 text-[#38bdf8] font-bold text-[11px]" title={`Time until current ${timeframe} candle closes`}>
+              <Clock className="w-3 h-3 text-[#38bdf8] animate-pulse" />
+              <span>{candleCountdown}</span>
+            </div>
+          </div>
+        )}
+
         {/* Floating Navigation Toolbar (Bottom-Right) */}
         <div className="absolute bottom-4 right-20 z-20 flex items-center space-x-1 bg-[#1e222d]/90 backdrop-blur-sm border border-[#2a2e39] rounded-lg p-1 shadow-2xl">
+          {/* Small Refresh Button */}
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="p-1 hover:bg-[#2a2e39] rounded text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+              title="Refresh Chart Data"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-[#38bdf8]" : ""}`} />
+            </button>
+          )}
           <button
             onClick={handleZoomIn}
             className="p-1 hover:bg-[#2a2e39] rounded text-slate-400 hover:text-white transition-colors"
@@ -1350,4 +1486,3 @@ export const Chart: React.FC<ChartProps> = ({
 };
 
 export default Chart;
-

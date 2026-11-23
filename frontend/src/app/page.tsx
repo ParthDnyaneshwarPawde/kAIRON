@@ -316,7 +316,8 @@ export default function Home() {
               <button
                 key={tf}
                 onClick={() => {
-                  const updated = { ...params, timeframe: tf };
+                  const newDays = tf === "1m" && params.days > 7 ? 7 : params.days;
+                  const updated = { ...params, timeframe: tf, days: newDays };
                   setParams(updated);
                   handleRunSimulation(updated);
                 }}
@@ -436,6 +437,8 @@ export default function Home() {
                   onChartReady={handleChartReady}
                   symbol={params.symbol}
                   timeframe={params.timeframe}
+                  onRefresh={() => handleRunSimulation(params)}
+                  isRefreshing={isLoading}
                 />
               </div>
 

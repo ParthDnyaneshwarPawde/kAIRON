@@ -30,7 +30,7 @@ INTERVAL_MAP = {
     "1d": "1d",
 }
 
-def fetch_biquote_market_data(symbol: str, timeframe: str = "15m", limit: int = 200) -> Optional[pd.DataFrame]:
+def fetch_biquote_market_data(symbol: str, timeframe: str = "15m", limit: int = 350) -> Optional[pd.DataFrame]:
     """
     Downloads authentic real-market OHLCV bars directly from biquote (MetaTrader 5 broker feed).
     These candles align 100% seamlessly with the real-time live tick stream.
@@ -39,9 +39,12 @@ def fetch_biquote_market_data(symbol: str, timeframe: str = "15m", limit: int = 
     valid_intervals = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "1d": "1d"}
     interval = valid_intervals.get(timeframe, "15m")
     
+    # Increase bar limit for tick-level 1m and 5m charts
+    fetch_limit = 400 if interval in ["1m", "5m"] else limit
+    
     try:
         url = f"https://biquote.io/api/{clean_sym}/ohlc"
-        r = requests.get(url, params={"interval": interval, "limit": limit}, timeout=6)
+        r = requests.get(url, params={"interval": interval, "limit": fetch_limit}, timeout=6)
         if r.status_code == 200:
             data = r.json()
             bars = data.get("bars", [])
@@ -195,11 +198,11 @@ def get_or_create_data(
     """
     parquet_path = os.path.join(DATA_DIR, f"{symbol}_{timeframe}_{days}d.parquet")
     
-    # 1. Recent Depth or Explicit biquote mode (<= 7 days): use biquote's seamless MT5 broker feed
-    if source == "biquote" or (days <= 7 and source != "exchange"):
-        df_bq = fetch_biquote_market_data(symbol=symbol, timeframe=timeframe, limit=200)
+    # 1. Recent Depth or Explicit biquote mode (<= 7 days or 1m/5m tick timeframes): use biquote's seamless MT5 broker feed
+    if source == "biquote" or (days <= 7 and source != "exchange") or (timeframe in ["1m", "5m"] and source != "exchange"):
+        df_bq = fetch_biquote_market_data(symbol=symbol, timeframe=timeframe, limit=350)
         if df_bq is not None and len(df_bq) > 10:
-            return df_bq, "biquote (MT5 Broker)"
+            return df_bq, f"biquote MT5 ({len(df_bq)} {timeframe} bars)"
             
     # 2. Deep Historical Backtesting Mode (days > 7):
     # Check if cached deep parquet exists and is less than 6 hours old
