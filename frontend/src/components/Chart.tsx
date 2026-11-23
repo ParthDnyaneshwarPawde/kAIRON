@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   createChart,
   ColorType,
@@ -9,32 +9,28 @@ import {
   IPriceLine,
   LineStyle,
   UTCTimestamp,
-  Time,
   MouseEventParams,
 } from "lightweight-charts";
 import { CandleData, MarkerData, ZoneData, LiveTick } from "@/types";
 import { 
   ZoomIn, 
   ZoomOut, 
-  Maximize2, 
   ChevronsRight, 
-  BarChart2, 
-  Layers, 
-  TrendingUp,
-  SlidersHorizontal,
-  Info
+  RotateCcw
 } from "lucide-react";
+
+export interface ChartApi {
+  scrollToTime: (time: number) => void;
+  fitContent: () => void;
+  jumpToLive: () => void;
+}
 
 interface ChartProps {
   candles: CandleData[];
   markers: MarkerData[];
   zones: ZoneData[];
   liveTick?: LiveTick | null;
-  onChartReady?: (api: { 
-    scrollToTime: (time: number) => void;
-    fitContent: () => void;
-    jumpToLive: () => void;
-  }) => void;
+  onChartReady?: (api: ChartApi) => void;
   symbol?: string;
   timeframe?: string;
 }
@@ -56,6 +52,12 @@ export const Chart: React.FC<ChartProps> = ({
   const ema50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const lastCandleRef = useRef<CandleData | null>(null);
+  const onChartReadyRef = useRef(onChartReady);
+
+  // Keep latest onChartReady callback ref without re-triggering chart destruction
+  useEffect(() => {
+    onChartReadyRef.current = onChartReady;
+  }, [onChartReady]);
 
   // Indicator visibility toggles
   const [showVolume, setShowVolume] = useState<boolean>(true);
@@ -63,8 +65,8 @@ export const Chart: React.FC<ChartProps> = ({
   const [showEMA50, setShowEMA50] = useState<boolean>(true);
   const [showZones, setShowZones] = useState<boolean>(true);
 
-  // Hovered Bar Info for TradingView HUD
-  const [hoveredBar, setHoveredBar] = useState<{
+  // HUD Bar Info for TradingView HUD
+  const [hudData, setHudData] = useState<{
     timeStr: string;
     open: number;
     high: number;
@@ -73,103 +75,108 @@ export const Chart: React.FC<ChartProps> = ({
     volume: number;
     change: number;
     changePct: number;
+    isUp: boolean;
   } | null>(null);
 
-  // Initialize Lightweight Chart
+  // 1. Initialize Chart ONCE per mount / symbol change
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Clean up any old chart instance
     if (chartRef.current) {
-      chartRef.current.remove();
+      try {
+        chartRef.current.remove();
+      } catch {}
       chartRef.current = null;
     }
 
+    const isDaily = timeframe === "1d";
+    const isForex = symbol.includes("EUR") || symbol.includes("GBP");
+
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: "#090d14" },
-        textColor: "#788294",
-        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        background: { type: ColorType.Solid, color: "#131722" },
+        textColor: "#787b86",
+        fontFamily: "'Trebuchet MS', -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: "#131b28" },
-        horzLines: { color: "#131b28" },
+        vertLines: { color: "#1e222d" },
+        horzLines: { color: "#1e222d" },
       },
       crosshair: {
-        mode: 1,
+        mode: 1, // Magnet crosshair
         vertLine: {
-          color: "#38bdf8",
+          color: "#2962ff",
           width: 1,
           style: LineStyle.Dashed,
-          labelBackgroundColor: "#0284c7",
+          labelBackgroundColor: "#2962ff",
         },
         horzLine: {
-          color: "#38bdf8",
+          color: "#2962ff",
           width: 1,
           style: LineStyle.Dashed,
-          labelBackgroundColor: "#0284c7",
+          labelBackgroundColor: "#2962ff",
         },
       },
       timeScale: {
-        borderColor: "#1e293b",
-        timeVisible: true,
+        borderColor: "#2a2e39",
+        timeVisible: !isDaily,
         secondsVisible: false,
-        rightOffset: 15,
-        barSpacing: 10,
-        minBarSpacing: 3,
+        rightOffset: 12,
+        barSpacing: 9,
+        minBarSpacing: 2,
       },
       rightPriceScale: {
-        borderColor: "#1e293b",
+        borderColor: "#2a2e39",
         scaleMargins: {
-          top: 0.08,
-          bottom: 0.2,
+          top: 0.1,
+          bottom: 0.22,
         },
         autoScale: true,
       },
     });
 
-    // 1. Candlestick Series
+    // Candlestick Series (TradingView colors)
     const candleSeries = chart.addCandlestickSeries({
-      upColor: "#10b981",
-      downColor: "#ef4444",
+      upColor: "#089981",
+      downColor: "#f23645",
       borderVisible: false,
-      wickUpColor: "#10b981",
-      wickDownColor: "#ef4444",
+      wickUpColor: "#089981",
+      wickDownColor: "#f23645",
       priceFormat: {
         type: "price",
-        precision: symbol.includes("EUR") || symbol.includes("GBP") ? 5 : 2,
-        minMove: symbol.includes("EUR") || symbol.includes("GBP") ? 0.00001 : 0.01,
+        precision: isForex ? 5 : 2,
+        minMove: isForex ? 0.00001 : 0.01,
       },
     });
 
-    // 2. Volume Histogram Series (Lower Pane)
+    // Volume Series (TradingView lower pane)
     const volumeSeries = chart.addHistogramSeries({
-      color: "#38bdf8",
-      priceFormat: {
-        type: "volume",
-      },
+      color: "#26a69a",
+      priceFormat: { type: "volume" },
       priceScaleId: "volume",
     });
 
     chart.priceScale("volume").applyOptions({
       scaleMargins: {
         top: 0.82,
-        bottom: 0.01,
+        bottom: 0.0,
       },
       alignLabels: false,
     });
 
-    // 3. 20 EMA Line
+    // 20 EMA Line
     const ema20Series = chart.addLineSeries({
-      color: "#38bdf8",
+      color: "#2962ff",
       lineWidth: 1,
       title: "EMA 20",
       priceScaleId: "right",
     });
 
-    // 4. 50 EMA Line
+    // 50 EMA Line
     const ema50Series = chart.addLineSeries({
-      color: "#f59e0b",
+      color: "#ff9800",
       lineWidth: 1,
       title: "EMA 50",
       priceScaleId: "right",
@@ -181,10 +188,32 @@ export const Chart: React.FC<ChartProps> = ({
     ema20SeriesRef.current = ema20Series;
     ema50SeriesRef.current = ema50Series;
 
-    // Crosshair HUD Subscriber
+    // Crosshair Hover Handler
     chart.subscribeCrosshairMove((param: MouseEventParams) => {
       if (!param.time || !param.seriesData || param.point === undefined) {
-        setHoveredBar(null);
+        // Fallback to last candle info when mouse leaves
+        if (lastCandleRef.current) {
+          const last = lastCandleRef.current;
+          const change = last.close - last.open;
+          const changePct = last.open ? (change / last.open) * 100 : 0;
+          const dateObj = new Date(last.time * 1000);
+          setHudData({
+            timeStr: dateObj.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              hour: isDaily ? undefined : "2-digit",
+              minute: isDaily ? undefined : "2-digit",
+            }),
+            open: last.open,
+            high: last.high,
+            low: last.low,
+            close: last.close,
+            volume: last.volume || 0,
+            change,
+            changePct,
+            isUp: last.close >= last.open,
+          });
+        }
         return;
       }
 
@@ -195,15 +224,15 @@ export const Chart: React.FC<ChartProps> = ({
         const timeStr = dateObj.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
+          hour: isDaily ? undefined : "2-digit",
+          minute: isDaily ? undefined : "2-digit",
         });
 
         const change = candleData.close - candleData.open;
         const changePct = (change / candleData.open) * 100;
         const volData = param.seriesData.get(volumeSeries) as any;
 
-        setHoveredBar({
+        setHudData({
           timeStr,
           open: candleData.open,
           high: candleData.high,
@@ -212,11 +241,12 @@ export const Chart: React.FC<ChartProps> = ({
           volume: volData?.value || 0,
           change,
           changePct,
+          isUp: candleData.close >= candleData.open,
         });
       }
     });
 
-    // Responsive Canvas Resize
+    // Resize Observer for auto-fitting canvas to container
     const resizeObserver = new ResizeObserver((entries) => {
       if (!entries || entries.length === 0 || !containerRef.current || !chartRef.current) return;
       const { width, height } = entries[0].contentRect;
@@ -224,18 +254,17 @@ export const Chart: React.FC<ChartProps> = ({
     });
     resizeObserver.observe(containerRef.current);
 
-    // Provide robust programmatic navigation API
-    if (onChartReady) {
-      onChartReady({
+    // Provide programmatic control API to parent
+    if (onChartReadyRef.current) {
+      onChartReadyRef.current({
         scrollToTime: (targetTime: number) => {
           if (!chartRef.current || !candleSeriesRef.current) return;
-          // Find the bar index corresponding to the target trade timestamp
-          const idx = candles.findIndex((c) => Math.abs(c.time - targetTime) <= 1800);
+          // Find bar index
+          const idx = candles.findIndex((c) => Math.abs(c.time - targetTime) <= 3600);
           if (idx !== -1) {
-            // Show ~60 bars centered on the trade bar (NEVER single candle!)
             chartRef.current.timeScale().setVisibleLogicalRange({
-              from: Math.max(0, idx - 35),
-              to: Math.min(candles.length - 1, idx + 35),
+              from: Math.max(0, idx - 40),
+              to: Math.min(candles.length + 10, idx + 40),
             });
           }
         },
@@ -246,10 +275,7 @@ export const Chart: React.FC<ChartProps> = ({
         },
         jumpToLive: () => {
           if (chartRef.current && candles.length > 0) {
-            chartRef.current.timeScale().setVisibleLogicalRange({
-              from: Math.max(0, candles.length - 75),
-              to: candles.length + 5,
-            });
+            chartRef.current.timeScale().scrollToPosition(-8, true);
           }
         },
       });
@@ -258,58 +284,103 @@ export const Chart: React.FC<ChartProps> = ({
     return () => {
       resizeObserver.disconnect();
       if (chartRef.current) {
-        chartRef.current.remove();
+        try {
+          chartRef.current.remove();
+        } catch {}
         chartRef.current = null;
       }
     };
-  }, [onChartReady, symbol, candles]);
+  }, [symbol, timeframe]); // ONLY depends on symbol and timeframe, NEVER candles or onChartReady!
 
-  // Load and format candles
+  // 2. Load and update candles data
   useEffect(() => {
     if (!candleSeriesRef.current || !candles || candles.length === 0) return;
 
-    const formattedCandles = candles.map((c) => ({
-      time: c.time as UTCTimestamp,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-    candleSeriesRef.current.setData(formattedCandles);
-    lastCandleRef.current = candles[candles.length - 1];
+    // Filter and sanitize candles
+    const formattedCandles = candles
+      .filter((c) => c && c.time && !isNaN(c.open) && !isNaN(c.close))
+      .map((c) => ({
+        time: c.time as UTCTimestamp,
+        open: Number(c.open),
+        high: Number(c.high),
+        low: Number(c.low),
+        close: Number(c.close),
+      }));
 
-    // Volume
+    // Ensure sorted strictly by time ascending
+    formattedCandles.sort((a, b) => (a.time as number) - (b.time as number));
+
+    // Remove duplicates if any
+    const uniqueCandles: typeof formattedCandles = [];
+    for (let i = 0; i < formattedCandles.length; i++) {
+      if (i === 0 || formattedCandles[i].time > formattedCandles[i - 1].time) {
+        uniqueCandles.push(formattedCandles[i]);
+      }
+    }
+
+    candleSeriesRef.current.setData(uniqueCandles);
+    const last = candles[candles.length - 1];
+    lastCandleRef.current = last;
+
+    // Set initial HUD Data from last candle
+    if (last) {
+      const change = last.close - last.open;
+      const changePct = last.open ? (change / last.open) * 100 : 0;
+      const dateObj = new Date(last.time * 1000);
+      setHudData({
+        timeStr: dateObj.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: timeframe === "1d" ? undefined : "2-digit",
+          minute: timeframe === "1d" ? undefined : "2-digit",
+        }),
+        open: last.open,
+        high: last.high,
+        low: last.low,
+        close: last.close,
+        volume: last.volume || 0,
+        change,
+        changePct,
+        isUp: last.close >= last.open,
+      });
+    }
+
+    // Volume series
     if (volumeSeriesRef.current) {
       const formattedVolume = candles.map((c) => ({
         time: c.time as UTCTimestamp,
-        value: c.volume || 100,
-        color: c.close >= c.open ? "rgba(16, 185, 129, 0.4)" : "rgba(239, 68, 68, 0.4)",
+        value: Number(c.volume) || 100,
+        color: c.close >= c.open ? "rgba(8, 153, 129, 0.4)" : "rgba(242, 54, 69, 0.4)",
       }));
+      formattedVolume.sort((a, b) => (a.time as number) - (b.time as number));
       volumeSeriesRef.current.setData(formattedVolume);
     }
 
-    // EMAs
+    // EMA 20
     if (ema20SeriesRef.current) {
       const ema20Data = candles
         .filter((c) => c.ema20 !== undefined && c.ema20 !== null)
         .map((c) => ({
           time: c.time as UTCTimestamp,
-          value: c.ema20 as number,
+          value: Number(c.ema20),
         }));
+      ema20Data.sort((a, b) => (a.time as number) - (b.time as number));
       ema20SeriesRef.current.setData(ema20Data);
     }
 
+    // EMA 50
     if (ema50SeriesRef.current) {
       const ema50Data = candles
         .filter((c) => c.ema50 !== undefined && c.ema50 !== null)
         .map((c) => ({
           time: c.time as UTCTimestamp,
-          value: c.ema50 as number,
+          value: Number(c.ema50),
         }));
+      ema50Data.sort((a, b) => (a.time as number) - (b.time as number));
       ema50SeriesRef.current.setData(ema50Data);
     }
 
-    // Markers
+    // Trade Markers
     if (markers && markers.length > 0) {
       const formattedMarkers = markers.map((m) => ({
         time: m.time as UTCTimestamp,
@@ -324,26 +395,35 @@ export const Chart: React.FC<ChartProps> = ({
       candleSeriesRef.current.setMarkers([]);
     }
 
-    // Default view: Show the most recent ~85 candles (TradingView standard default view)
-    if (chartRef.current && candles.length > 0) {
-      chartRef.current.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, candles.length - 85),
-        to: candles.length + 5,
-      });
-    }
-  }, [candles, markers]);
+    // Smooth TradingView Viewport Framing:
+    // Deferred to next animation frame so lightweight-charts has computed bar layout coordinates!
+    requestAnimationFrame(() => {
+      if (!chartRef.current) return;
+      if (uniqueCandles.length <= 60) {
+        chartRef.current.timeScale().fitContent();
+      } else {
+        // Show recent ~70 candles with comfortable right offset
+        const total = uniqueCandles.length;
+        chartRef.current.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, total - 70),
+          to: total + 8,
+        });
+      }
+    });
+  }, [candles, markers, timeframe]);
 
-  // Sync Toggles
+  // 3. Sync Indicator Visibility
   useEffect(() => {
     volumeSeriesRef.current?.applyOptions({ visible: showVolume });
     ema20SeriesRef.current?.applyOptions({ visible: showEMA20 });
     ema50SeriesRef.current?.applyOptions({ visible: showEMA50 });
   }, [showVolume, showEMA20, showEMA50]);
 
-  // Sync Order Block Price Lines
+  // 4. Sync Order Block Zones Lines
   useEffect(() => {
     if (!candleSeriesRef.current) return;
 
+    // Remove old lines
     priceLinesRef.current.forEach((line) => {
       try {
         candleSeriesRef.current?.removePriceLine(line);
@@ -353,12 +433,13 @@ export const Chart: React.FC<ChartProps> = ({
 
     if (!showZones) return;
 
+    // Draw recent active Order Blocks
     const activeZones = (zones || []).filter((z) => z.active).slice(-6);
 
     activeZones.forEach((z) => {
       if (!candleSeriesRef.current) return;
       const isBull = z.type === "bullish";
-      const color = isBull ? "#10b981" : "#ef4444";
+      const color = isBull ? "#089981" : "#f23645";
       const label = isBull ? "BULL OB" : "BEAR OB";
 
       try {
@@ -368,7 +449,7 @@ export const Chart: React.FC<ChartProps> = ({
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: true,
-          title: `${label} Ceiling`,
+          title: `${label} High`,
         });
 
         const bottomLine = candleSeriesRef.current.createPriceLine({
@@ -377,34 +458,32 @@ export const Chart: React.FC<ChartProps> = ({
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
-          title: `${label} Floor`,
+          title: `${label} Low`,
         });
 
         priceLinesRef.current.push(topLine, bottomLine);
-      } catch (err) {
-        console.warn("Zone line error:", err);
-      }
+      } catch {}
     });
   }, [zones, showZones]);
 
-  // Handle Real-Time Live Tick (Proper Candle Updating & Bar Appending)
+  // 5. Handle Live WebSocket Ticks without destroying or resetting history
   useEffect(() => {
     if (!liveTick || !candleSeriesRef.current) return;
 
     const last = lastCandleRef.current;
     if (!last) return;
 
-    // Timeframe length in seconds
+    // Bar period in seconds
     const tfSec = timeframe === "1m" ? 60 : timeframe === "5m" ? 300 : timeframe === "15m" ? 900 : timeframe === "1h" ? 3600 : 86400;
     const currentBarPeriod = Math.floor(liveTick.time / tfSec) * tfSec;
 
     if (currentBarPeriod > last.time) {
-      // Form new bar
+      // New bar formed
       const newCandle: CandleData = {
         time: currentBarPeriod,
         open: liveTick.bid,
-        high: liveTick.bid,
-        low: liveTick.bid,
+        high: Math.max(liveTick.bid, liveTick.ask),
+        low: Math.min(liveTick.bid, liveTick.ask),
         close: liveTick.bid,
         volume: liveTick.volume || 10,
         ema20: last.ema20,
@@ -421,7 +500,7 @@ export const Chart: React.FC<ChartProps> = ({
         });
       } catch {}
     } else {
-      // Update existing bar
+      // Update existing current bar
       const updatedCandle = {
         time: last.time as UTCTimestamp,
         open: last.open,
@@ -434,6 +513,24 @@ export const Chart: React.FC<ChartProps> = ({
         candleSeriesRef.current.update(updatedCandle);
       } catch {}
     }
+
+    // Update HUD with live price
+    if (lastCandleRef.current) {
+      const cur = lastCandleRef.current;
+      const change = cur.close - cur.open;
+      const changePct = cur.open ? (change / cur.open) * 100 : 0;
+      setHudData((prev) => ({
+        timeStr: prev?.timeStr || "Live Bar",
+        open: cur.open,
+        high: cur.high,
+        low: cur.low,
+        close: cur.close,
+        volume: cur.volume || 0,
+        change,
+        changePct,
+        isUp: cur.close >= cur.open,
+      }));
+    }
   }, [liveTick, timeframe]);
 
   // Navigation handlers
@@ -442,7 +539,7 @@ export const Chart: React.FC<ChartProps> = ({
     const range = chartRef.current.timeScale().getVisibleLogicalRange();
     if (range) {
       const center = (range.from + range.to) / 2;
-      const span = (range.to - range.from) * 0.7;
+      const span = Math.max(10, (range.to - range.from) * 0.7);
       chartRef.current.timeScale().setVisibleLogicalRange({
         from: center - span / 2,
         to: center + span / 2,
@@ -464,160 +561,139 @@ export const Chart: React.FC<ChartProps> = ({
   };
 
   const handleFitContent = () => {
-    chartRef.current?.timeScale().fitContent();
-  };
-
-  const handleJumpToLive = () => {
-    if (chartRef.current && candles.length > 0) {
-      chartRef.current.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, candles.length - 75),
-        to: candles.length + 5,
-      });
+    if (chartRef.current) {
+      chartRef.current.timeScale().fitContent();
     }
   };
 
-  const latestCandle = candles[candles.length - 1];
-  const displayBar = hoveredBar || (latestCandle ? {
-    timeStr: new Date(latestCandle.time * 1000).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-    open: latestCandle.open,
-    high: latestCandle.high,
-    low: latestCandle.low,
-    close: latestCandle.close,
-    volume: latestCandle.volume || 0,
-    change: latestCandle.close - latestCandle.open,
-    changePct: ((latestCandle.close - latestCandle.open) / latestCandle.open) * 100,
-  } : null);
+  const handleJumpToLatest = () => {
+    if (chartRef.current) {
+      chartRef.current.timeScale().scrollToPosition(-8, true);
+    }
+  };
 
-  const dec = symbol.includes("EUR") || symbol.includes("GBP") ? 5 : 2;
+  const isForex = symbol.includes("EUR") || symbol.includes("GBP");
+  const precision = isForex ? 5 : 2;
 
   return (
-    <div className="relative w-full h-full flex flex-col bg-[#070a0f] rounded-xl border border-[#1b2333] overflow-hidden shadow-2xl">
-      {/* TradingView Top Status & Indicator Bar */}
-      <div className="border-b border-[#141b27] bg-[#090d14] px-3 py-2 flex flex-wrap items-center justify-between gap-2 z-20 select-none">
-        {/* Left: Ticker & Crosshair HUD */}
-        <div className="flex flex-wrap items-center space-x-3 text-xs">
-          <div className="flex items-center space-x-2">
-            <span className="font-extrabold text-white text-sm tracking-tight">{symbol}</span>
-            <span className="bg-blue-500/20 text-blue-400 font-bold px-1.5 py-0.5 rounded text-[10px]">
+    <div className="relative w-full h-full flex flex-col bg-[#131722] rounded-xl border border-[#2a2e39] overflow-hidden shadow-2xl select-none group">
+      {/* TradingView Top Chart Bar: HUD & Indicators */}
+      <div className="flex flex-wrap items-center justify-between px-3 py-1.5 bg-[#131722] border-b border-[#2a2e39] text-xs z-10 gap-2">
+        {/* Left: Symbol & Crosshair HUD Values */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center space-x-1.5 font-bold text-white">
+            <span className="text-sm tracking-tight">{symbol}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2e39] text-slate-300 font-mono">
               {timeframe}
             </span>
           </div>
 
-          {displayBar && (
-            <div className="flex flex-wrap items-center space-x-2 font-mono text-[11px] text-slate-300">
-              <span className="text-slate-500 hidden md:inline">{displayBar.timeStr}</span>
-              <span>O: <strong className="text-slate-200">{displayBar.open.toFixed(dec)}</strong></span>
-              <span>H: <strong className="text-emerald-400">{displayBar.high.toFixed(dec)}</strong></span>
-              <span>L: <strong className="text-rose-400">{displayBar.low.toFixed(dec)}</strong></span>
-              <span>C: <strong className={displayBar.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
-                {displayBar.close.toFixed(dec)}
-              </strong></span>
-              {displayBar.volume > 0 && (
-                <span className="hidden sm:inline text-slate-400">Vol: <strong className="text-slate-200">{displayBar.volume.toLocaleString()}</strong></span>
-              )}
-              <span className={`font-bold ${displayBar.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                {displayBar.change >= 0 ? "+" : ""}{displayBar.change.toFixed(dec)} ({displayBar.changePct.toFixed(2)}%)
+          {hudData && (
+            <div className="flex flex-wrap items-center gap-x-2 text-[11px] font-mono text-slate-300">
+              <span className="text-slate-500 hidden sm:inline">{hudData.timeStr}</span>
+              <span>O: <strong className="text-white">{hudData.open.toFixed(precision)}</strong></span>
+              <span>H: <strong className="text-white">{hudData.high.toFixed(precision)}</strong></span>
+              <span>L: <strong className="text-white">{hudData.low.toFixed(precision)}</strong></span>
+              <span>C: <strong className={hudData.isUp ? "text-[#089981]" : "text-[#f23645]"}>{hudData.close.toFixed(precision)}</strong></span>
+              <span className={hudData.isUp ? "text-[#089981] font-semibold" : "text-[#f23645] font-semibold"}>
+                {hudData.change >= 0 ? "+" : ""}{hudData.change.toFixed(precision)} ({hudData.changePct.toFixed(2)}%)
               </span>
+              {showVolume && hudData.volume > 0 && (
+                <span className="text-slate-400 hidden md:inline">
+                  Vol: {hudData.volume.toLocaleString()}
+                </span>
+              )}
             </div>
           )}
         </div>
 
-        {/* Right: Indicators & Drawing Overlays */}
-        <div className="flex items-center space-x-1 text-[11px]">
+        {/* Right: Clean Indicator Toggles */}
+        <div className="flex items-center space-x-1 bg-[#1e222d] p-0.5 rounded border border-[#2a2e39]">
           <button
             onClick={() => setShowVolume(!showVolume)}
-            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors flex items-center space-x-1 ${
-              showVolume ? "bg-slate-800 text-blue-400 border border-blue-500/30" : "text-slate-500 hover:text-slate-300"
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
+              showVolume ? "bg-[#2962ff]/20 text-[#2962ff]" : "text-slate-500 hover:text-slate-300"
             }`}
-            title="Toggle Volume"
           >
-            <span>VOL</span>
+            Vol
           </button>
-
           <button
             onClick={() => setShowEMA20(!showEMA20)}
-            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
-              showEMA20 ? "bg-blue-500/20 text-blue-400 border border-blue-500/40" : "text-slate-500 hover:text-slate-300"
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
+              showEMA20 ? "bg-[#2962ff]/20 text-[#2962ff]" : "text-slate-500 hover:text-slate-300"
             }`}
-            title="Toggle 20 EMA"
           >
             EMA20
           </button>
-
           <button
             onClick={() => setShowEMA50(!showEMA50)}
-            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
-              showEMA50 ? "bg-amber-500/20 text-amber-400 border border-amber-500/40" : "text-slate-500 hover:text-slate-300"
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
+              showEMA50 ? "bg-[#ff9800]/20 text-[#ff9800]" : "text-slate-500 hover:text-slate-300"
             }`}
-            title="Toggle 50 EMA"
           >
             EMA50
           </button>
-
           <button
             onClick={() => setShowZones(!showZones)}
-            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors flex items-center space-x-1 ${
-              showZones ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40" : "text-slate-500 hover:text-slate-300"
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
+              showZones ? "bg-[#089981]/20 text-[#089981]" : "text-slate-500 hover:text-slate-300"
             }`}
-            title="Toggle Order Block Zones"
+            title="Toggle Pivot Order Block Zones"
           >
-            <span>OB ZONES</span>
+            OB Zones ({zones?.filter((z) => z.active).length || 0})
           </button>
         </div>
       </div>
 
-      {/* Real-time Floating Live Spot Badge */}
-      {liveTick && (
-        <div className="absolute top-11 left-3 z-10 flex items-center space-x-2 bg-[#090d14]/90 backdrop-blur-md px-2.5 py-1 rounded-md border border-emerald-500/40 shadow-lg select-none">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          <span className="text-[11px] font-mono text-emerald-400 font-bold">
-            LIVE: {liveTick.bid.toFixed(dec)}
-          </span>
-          <span className="text-[10px] text-slate-400">Ask: {liveTick.ask.toFixed(dec)}</span>
-        </div>
-      )}
+      {/* Main Canvas Container */}
+      <div ref={containerRef} className="flex-1 w-full min-h-[460px] relative" />
 
       {/* Floating TradingView Chart Navigation Toolbar (Bottom-Right) */}
-      <div className="absolute bottom-6 right-16 z-20 flex items-center space-x-1 bg-[#101725]/90 backdrop-blur-md p-1 rounded-lg border border-[#222f46] shadow-xl">
+      <div className="absolute bottom-4 right-4 flex items-center space-x-1 bg-[#1e222d]/90 backdrop-blur-md border border-[#2a2e39] rounded-lg p-1 shadow-xl z-20 opacity-80 group-hover:opacity-100 transition-opacity">
         <button
           onClick={handleZoomIn}
-          className="p-1.5 rounded hover:bg-[#1a2538] text-slate-300 hover:text-white transition-colors"
-          title="Zoom In"
+          className="p-1.5 rounded hover:bg-[#2a2e39] text-slate-300 hover:text-white transition-colors"
+          title="Zoom In (+)"
         >
           <ZoomIn className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={handleZoomOut}
-          className="p-1.5 rounded hover:bg-[#1a2538] text-slate-300 hover:text-white transition-colors"
-          title="Zoom Out"
+          className="p-1.5 rounded hover:bg-[#2a2e39] text-slate-300 hover:text-white transition-colors"
+          title="Zoom Out (-)"
         >
           <ZoomOut className="w-3.5 h-3.5" />
         </button>
+        <div className="h-3 w-px bg-[#2a2e39]" />
         <button
           onClick={handleFitContent}
-          className="p-1.5 rounded hover:bg-[#1a2538] text-slate-300 hover:text-white transition-colors"
-          title="Fit All Data to Screen"
+          className="px-2 py-1 rounded hover:bg-[#2a2e39] text-[10px] font-bold text-slate-300 hover:text-white transition-colors flex items-center space-x-1"
+          title="Fit All Candles"
         >
-          <Maximize2 className="w-3.5 h-3.5" />
+          <RotateCcw className="w-3 h-3" />
+          <span>Fit</span>
         </button>
         <button
-          onClick={handleJumpToLive}
-          className="px-2 py-1 rounded bg-blue-600/30 hover:bg-blue-600/50 text-blue-400 hover:text-white text-[10px] font-bold flex items-center space-x-1 transition-colors"
-          title="Jump to Real-Time Latest Candle"
+          onClick={handleJumpToLatest}
+          className="px-2 py-1 rounded bg-[#2962ff]/20 hover:bg-[#2962ff]/40 text-[#2962ff] text-[10px] font-bold transition-colors flex items-center space-x-1"
+          title="Jump to Real-Time Latest Bar"
         >
           <ChevronsRight className="w-3 h-3" />
-          <span>LATEST</span>
+          <span>Latest</span>
         </button>
       </div>
 
-      {/* Main Lightweight-Charts Canvas */}
-      <div ref={containerRef} className="w-full flex-1 min-h-[500px]" />
+      {/* Live Stream Price Badge (Top-Left of Canvas) */}
+      {liveTick && (
+        <div className="absolute top-10 left-3 flex items-center space-x-2 bg-[#1e222d]/80 backdrop-blur-md border border-[#2a2e39] rounded px-2 py-0.5 text-[11px] font-mono z-10 pointer-events-none">
+          <span className="w-2 h-2 rounded-full bg-[#089981] animate-ping" />
+          <span className="text-white font-bold">BID: {liveTick.bid.toFixed(precision)}</span>
+          <span className="text-slate-400">ASK: {liveTick.ask.toFixed(precision)}</span>
+          <span className="text-[9px] text-[#2962ff]">({liveTick.source})</span>
+        </div>
+      )}
     </div>
   );
 };
+
 export default Chart;

@@ -253,3 +253,32 @@ kAIRON/
 ### 3. Verified Real-Market Data Sources:
 - **Historical Data**: Real CME Comex Gold Futures (`GC=F`) for XAUUSD, Interbank Forex (`EURUSD=X`, `GBPUSD=X`) via real financial exchange APIs.
 - **Live Spot Streaming**: Real-time tick stream polled via `/ws/live` and pushed directly to active lightweight-charts series.
+
+---
+
+## Upgrade: Resolution of Live Streaming Single-Candle Bug & TradingView Theme Stabilization
+- **Timestamp**: 2026-11-23T14:05:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### 1. Root Cause Analysis of the "Single Candle" Bug:
+- **Chart Lifecycle Recreation Bug**: In `frontend/src/components/Chart.tsx`, the chart creation `useEffect` erroneously included `[onChartReady, symbol, candles]` in its dependency array. Because `onChartReady` was passed as an inline arrow function from `page.tsx`, every single incoming WebSocket live tick (which updated `liveTick` state in `page.tsx` every sub-second) triggered a re-render with a new function reference. This caused `chartRef.current.remove()` to destroy and re-create the chart canvas 60+ times per minute.
+- **Race Condition in `candleSeries.update()` vs `setData()`**: When the chart was recreated, `candleSeries` was initialized empty. Incoming live ticks immediately called `candleSeries.update()`, creating only that 1 single live candle on the blank series before historical data was applied.
+- **Synchronous `setVisibleLogicalRange` Clamping**: Calling `setVisibleLogicalRange` synchronously immediately after `setData` in the same JS tick caused Lightweight Charts to compute logical bounds before the canvas layout pass, resulting in scale clamping to `[0, 1]`.
+
+### 2. Comprehensive Resolution:
+- **Decoupled Chart Instantiation Lifecycle**: Chart creation in `Chart.tsx` now depends strictly on `[symbol, timeframe]`. It is NEVER destroyed or removed when candles update or when WebSocket ticks stream in.
+- **Stable References**: Stored `onChartReady` in a ref (`onChartReadyRef.current`) and wrapped `handleChartReady` in `useCallback` in `page.tsx`.
+- **Deferred Layout Adjustment**: Replaced synchronous logical range calls with `requestAnimationFrame(() => { chart.timeScale().fitContent(); })` and standard TradingView bar spacing (`barSpacing: 9`, `rightOffset: 12`).
+- **Non-Destructive Live Tick Updating**: In `liveTick` handler, incoming ticks update the current candle or append a new bar without modifying or re-rendering historical bars.
+- **Daily Timeframe Axis Formatting**: Set `timeVisible: !isDaily` so Daily (`1D`) bars show calendar dates (Oct 23, Nov 13, Nov 23) rather than confusing `00:00` timestamps.
+
+### 3. Sleek TradingView Dark Theme & Navigation:
+- Palette matching TradingView Pro: Background `#131722`, borders `#2a2e39`, grid `#1e222d`, TradingView green `#089981`, TradingView red `#f23645`, and accent `#2962ff`.
+- Full-featured on-chart floating navigation toolbar:
+  - `Zoom In (+)`
+  - `Zoom Out (-)`
+  - `Fit All Data (Fit)`
+  - `Latest Real-Time Bar (Latest)`
+- Collapsible Strategy Parameters drawer keeps the UI clutter-free.
+- Verified transparent data source banner detailing CME Comex Gold (`GC=F`) spot benchmark ($3,626/oz), Interbank Forex feeds, and live MT5/market tick streaming.
+

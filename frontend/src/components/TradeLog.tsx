@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { Trade } from "@/types";
-import { ArrowUpRight, ArrowDownRight, ExternalLink, ListFilter } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ListFilter } from "lucide-react";
 
 interface TradeLogProps {
   trades: Trade[];
@@ -30,23 +30,23 @@ export const TradeLog: React.FC<TradeLogProps> = ({
   };
 
   return (
-    <div className="bg-[#121721] border border-[#21262d] rounded-xl overflow-hidden shadow-xl flex flex-col h-full">
+    <div className="bg-[#131722] border border-[#2a2e39] rounded-xl overflow-hidden shadow-2xl flex flex-col h-full select-none">
       {/* Table Header Controls */}
-      <div className="p-3.5 border-b border-[#21262d] flex items-center justify-between bg-[#161b22]/50">
+      <div className="p-3 border-b border-[#2a2e39] flex items-center justify-between bg-[#1e222d]/60">
         <div className="flex items-center space-x-2">
-          <ListFilter className="w-4 h-4 text-blue-400" />
+          <ListFilter className="w-3.5 h-3.5 text-[#2962ff]" />
           <h3 className="text-xs font-bold uppercase tracking-wider text-white">
             Execution Log ({filteredTrades.length} / {trades.length})
           </h3>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center space-x-1.5 bg-[#0d1117] p-0.5 rounded-lg border border-[#30363d]">
+        {/* Filter Pills */}
+        <div className="flex items-center space-x-1 bg-[#131722] p-0.5 rounded-lg border border-[#2a2e39]">
           <button
             onClick={() => setFilter("ALL")}
-            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
               filter === "ALL"
-                ? "bg-blue-600 text-white"
+                ? "bg-[#2962ff] text-white"
                 : "text-slate-400 hover:text-white"
             }`}
           >
@@ -54,9 +54,9 @@ export const TradeLog: React.FC<TradeLogProps> = ({
           </button>
           <button
             onClick={() => setFilter("WIN")}
-            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
               filter === "WIN"
-                ? "bg-emerald-600 text-white"
+                ? "bg-[#089981] text-white"
                 : "text-slate-400 hover:text-white"
             }`}
           >
@@ -64,9 +64,9 @@ export const TradeLog: React.FC<TradeLogProps> = ({
           </button>
           <button
             onClick={() => setFilter("LOSS")}
-            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
               filter === "LOSS"
-                ? "bg-rose-600 text-white"
+                ? "bg-[#f23645] text-white"
                 : "text-slate-400 hover:text-white"
             }`}
           >
@@ -76,30 +76,27 @@ export const TradeLog: React.FC<TradeLogProps> = ({
       </div>
 
       {/* Scrollable Table */}
-      <div className="flex-1 overflow-auto max-h-[360px]">
+      <div className="flex-1 overflow-auto max-h-[500px]">
         {filteredTrades.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 text-xs">
-            No executed trades found for the selected criteria.
+          <div className="p-8 text-center text-slate-500 text-xs font-mono">
+            No trades match the current filter criteria.
           </div>
         ) : (
-          <table className="w-full text-left text-xs text-slate-300 border-collapse">
-            <thead className="sticky top-0 bg-[#0d1117] text-slate-400 border-b border-[#21262d] uppercase text-[10px] tracking-wider font-semibold z-10">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead className="bg-[#1e222d] text-slate-400 font-semibold sticky top-0 z-10 text-[10px] uppercase border-b border-[#2a2e39]">
               <tr>
-                <th className="py-2.5 px-3">Trade</th>
-                <th className="py-2.5 px-3">Type</th>
-                <th className="py-2.5 px-3">Entry Time</th>
-                <th className="py-2.5 px-3 text-right">Entry Price</th>
-                <th className="py-2.5 px-3 text-right">SL / TP</th>
-                <th className="py-2.5 px-3 text-right">Exit Price</th>
-                <th className="py-2.5 px-3 text-right">PnL ($)</th>
-                <th className="py-2.5 px-3 text-center">Status</th>
-                <th className="py-2.5 px-2 text-center">Snap</th>
+                <th className="py-2 px-2.5">Trade</th>
+                <th className="py-2 px-2">Type</th>
+                <th className="py-2 px-2">Entry</th>
+                <th className="py-2 px-2">SL / TP</th>
+                <th className="py-2 px-2.5 text-right">PnL</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1e2638] font-mono text-[11px]">
+            <tbody className="divide-y divide-[#2a2e39]/50 font-mono">
               {filteredTrades.map((t) => {
                 const isWin = t.status === "WIN";
                 const isSelected = selectedTradeId === t.id;
+                const isBuy = t.type === "BUY";
 
                 return (
                   <tr
@@ -107,63 +104,46 @@ export const TradeLog: React.FC<TradeLogProps> = ({
                     onClick={() => onSelectTrade(t)}
                     className={`cursor-pointer transition-colors ${
                       isSelected
-                        ? "bg-blue-900/30 text-white border-l-2 border-blue-500"
-                        : "hover:bg-[#161f30]/60"
+                        ? "bg-[#2962ff]/20 hover:bg-[#2962ff]/30"
+                        : "hover:bg-[#1e222d]/70"
                     }`}
                   >
-                    <td className="py-2 px-3 font-semibold text-slate-400">
-                      {t.id}
+                    <td className="py-2 px-2.5">
+                      <span className="font-semibold text-white block text-[11px]">{t.id}</span>
+                      <span className="text-[9px] text-slate-500">{formatTimestamp(t.entry_time)}</span>
                     </td>
-                    <td className="py-2 px-3">
+                    <td className="py-2 px-2">
                       <span
-                        className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                          t.type === "BUY"
-                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                            : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                        className={`inline-flex items-center space-x-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          isBuy
+                            ? "bg-[#089981]/15 text-[#089981]"
+                            : "bg-[#f23645]/15 text-[#f23645]"
                         }`}
                       >
-                        {t.type === "BUY" ? (
-                          <ArrowUpRight className="w-3 h-3" />
+                        {isBuy ? (
+                          <ArrowUpRight className="w-3 h-3 mr-0.5" />
                         ) : (
-                          <ArrowDownRight className="w-3 h-3" />
+                          <ArrowDownRight className="w-3 h-3 mr-0.5" />
                         )}
-                        <span>{t.type}</span>
+                        {t.type}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-slate-400">
-                      {formatTimestamp(t.entry_time)}
-                    </td>
-                    <td className="py-2 px-3 text-right font-medium text-white">
+                    <td className="py-2 px-2 text-slate-200 text-[11px]">
                       {t.entry_price.toFixed(2)}
                     </td>
-                    <td className="py-2 px-3 text-right text-slate-400 text-[10px]">
-                      <span className="text-rose-400">{t.sl.toFixed(2)}</span>
-                      <span className="mx-1">/</span>
-                      <span className="text-emerald-400">{t.tp.toFixed(2)}</span>
+                    <td className="py-2 px-2 text-slate-400 text-[10px]">
+                      <div>SL: {t.sl.toFixed(2)}</div>
+                      <div>TP: {t.tp.toFixed(2)}</div>
                     </td>
-                    <td className="py-2 px-3 text-right text-slate-300">
-                      {t.exit_price ? t.exit_price.toFixed(2) : "-"}
-                    </td>
-                    <td
-                      className={`py-2 px-3 text-right font-bold ${
-                        isWin ? "text-emerald-400" : "text-rose-400"
-                      }`}
-                    >
-                      {t.pnl_usd >= 0 ? "+" : ""}${t.pnl_usd.toFixed(2)}
-                    </td>
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-2 px-2.5 text-right">
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                          isWin
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : "bg-rose-500/10 text-rose-400"
+                        className={`font-bold text-[11px] block ${
+                          isWin ? "text-[#089981]" : "text-[#f23645]"
                         }`}
                       >
-                        {t.status}
+                        {t.pnl_usd >= 0 ? "+" : ""}${t.pnl_usd.toFixed(2)}
                       </span>
-                    </td>
-                    <td className="py-2 px-2 text-center text-slate-500 hover:text-blue-400">
-                      <ExternalLink className="w-3 h-3 inline" />
+                      <span className="text-[9px] text-slate-500 uppercase">{t.status}</span>
                     </td>
                   </tr>
                 );
@@ -175,4 +155,5 @@ export const TradeLog: React.FC<TradeLogProps> = ({
     </div>
   );
 };
+
 export default TradeLog;

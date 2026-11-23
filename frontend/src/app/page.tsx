@@ -12,15 +12,16 @@ import {
   LiveTick,
 } from "@/types";
 import { generateSeedSimulation } from "@/lib/seedData";
-import { Terminal, Activity, AlertCircle, Sparkles } from "lucide-react";
+import { Terminal, Activity, AlertCircle, Database, CheckCircle2 } from "lucide-react";
+import type { ChartApi } from "@/components/Chart";
 
 // Dynamically import Chart to disable SSR (lightweight-charts requires window/canvas)
 const Chart = dynamic(() => import("@/components/Chart"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full min-h-[500px] bg-[#070a0f] rounded-xl border border-[#1b2333] flex items-center justify-center">
+    <div className="w-full h-full min-h-[500px] bg-[#131722] rounded-xl border border-[#2a2e39] flex items-center justify-center">
       <div className="flex flex-col items-center space-y-3">
-        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-[#2962ff] border-t-transparent rounded-full animate-spin" />
         <span className="text-xs text-slate-400 font-mono">
           Loading TradingView Canvas...
         </span>
@@ -50,12 +51,13 @@ export default function Home() {
   const [serverStatus, setServerStatus] = useState<"connected" | "connecting" | "offline">("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const chartApiRef = useRef<{ 
-    scrollToTime: (time: number) => void;
-    fitContent: () => void;
-    jumpToLive: () => void;
-  } | null>(null);
+  const chartApiRef = useRef<ChartApi | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Stable callback for chart API
+  const handleChartReady = useCallback((api: ChartApi) => {
+    chartApiRef.current = api;
+  }, []);
 
   // Run Simulation API call
   const handleRunSimulation = useCallback(async (customParams?: SimulationParams) => {
@@ -117,8 +119,7 @@ export default function Home() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err: any) {
-      console.error("Export error:", err);
-      // Fallback CSV download from client memory
+      console.error("Export error, fallback to client CSV:", err);
       const rows = [
         ["Trade ID", "Symbol", "Type", "Entry Time", "Entry Price", "Stop Loss", "Take Profit", "Exit Time", "Exit Price", "PnL ($)", "Status"],
         ...data.trades.map((t) => [
@@ -205,44 +206,44 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#06080e] text-slate-100 flex flex-col font-sans">
-      {/* Top Header */}
-      <header className="border-b border-[#141b27] bg-[#090d14] px-4 py-2 sticky top-0 z-30 flex items-center justify-between">
+    <main className="min-h-screen bg-[#0d1017] text-slate-100 flex flex-col font-sans">
+      {/* Top Header - TradingView style */}
+      <header className="border-b border-[#2a2e39] bg-[#131722] px-4 py-2 sticky top-0 z-30 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-7 h-7 rounded-md bg-gradient-to-tr from-blue-600 via-indigo-600 to-amber-500 flex items-center justify-center shadow-md">
-            <Terminal className="w-3.5 h-3.5 text-white" />
+          <div className="w-7 h-7 rounded-md bg-gradient-to-tr from-[#2962ff] to-[#00bcd4] flex items-center justify-center shadow-md">
+            <Terminal className="w-4 h-4 text-white" />
           </div>
           <div className="flex items-center space-x-2">
             <span className="font-black text-sm tracking-wide text-white">
-              k<span className="text-amber-400">AIRON</span>
+              k<span className="text-[#00bcd4]">AIRON</span>
             </span>
-            <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              TRADINGVIEW ENGINE
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-[#2962ff]/10 text-[#2962ff] border border-[#2962ff]/20">
+              TRADINGVIEW TERMINAL
             </span>
           </div>
         </div>
 
-        {/* Server & Engine Status */}
+        {/* Server & Engine Status Badge */}
         <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-[#101725] border border-[#1b2537] text-xs">
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-[#1e222d] border border-[#2a2e39] text-xs">
             <span
               className={`w-2 h-2 rounded-full ${
                 serverStatus === "connected"
-                  ? "bg-emerald-400 animate-pulse"
+                  ? "bg-[#089981] animate-pulse"
                   : serverStatus === "connecting"
-                  ? "bg-amber-400 animate-ping"
-                  : "bg-rose-400"
+                  ? "bg-[#ff9800] animate-ping"
+                  : "bg-[#f23645]"
               }`}
             />
-            <span className="text-[10px] font-semibold text-slate-300">
+            <span className="text-[11px] font-semibold text-slate-300">
               {serverStatus === "connected" ? "Live Feed Engine Active" : serverStatus === "connecting" ? "Connecting" : "Offline Seed"}
             </span>
           </div>
         </div>
       </header>
 
-      {/* Main TradingView Workspace */}
-      <div className="flex-1 p-2 sm:p-3 space-y-2.5 max-w-[1850px] w-full mx-auto flex flex-col">
+      {/* Main Workspace */}
+      <div className="flex-1 p-2 sm:p-3 space-y-2 max-w-[1920px] w-full mx-auto flex flex-col">
         {/* Error notification if backend drops */}
         {errorMessage && (
           <div className="bg-rose-950/40 border border-rose-500/40 rounded-lg p-2.5 flex items-center justify-between text-rose-300 text-xs">
@@ -259,7 +260,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Compact Strategy & Market Navigation Bar */}
+        {/* Compact Top Navigation Bar */}
         <Controls
           params={params}
           onChange={(newParams) => {
@@ -274,28 +275,26 @@ export default function Home() {
           onToggleLiveFeed={handleToggleLiveFeed}
         />
 
-        {/* Compact TradingView KPI Ribbon */}
+        {/* TradingView KPI Ribbon */}
         <Metrics metrics={data.metrics} />
 
         {/* Main Chart Canvas & Execution Log Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-2.5 flex-1 min-h-[580px]">
           {/* Main Candlestick Chart (Takes 3 columns on wide displays) */}
-          <div className="lg:col-span-3 h-[520px] lg:h-full flex flex-col">
+          <div className="lg:col-span-3 h-[540px] lg:h-full flex flex-col">
             <Chart
               candles={data.candles}
               markers={data.markers}
               zones={data.zones}
               liveTick={liveTick}
-              onChartReady={(api) => {
-                chartApiRef.current = api;
-              }}
+              onChartReady={handleChartReady}
               symbol={data.symbol}
               timeframe={data.timeframe}
             />
           </div>
 
           {/* Trade Execution Log (Takes 1 column on wide displays) */}
-          <div className="lg:col-span-1 h-[520px] lg:h-full flex flex-col">
+          <div className="lg:col-span-1 h-[540px] lg:h-full flex flex-col">
             <TradeLog
               trades={data.trades}
               onSelectTrade={handleSelectTrade}
