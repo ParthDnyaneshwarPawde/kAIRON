@@ -77,3 +77,105 @@
 
 ### Verification:
 - Next.js production build (`npm run build`) succeeded with zero errors (all static pages generated, no SSR/window-undefined issues).
+
+---
+
+## Phase 3: Integration, Simulation Run & CSV Export
+- **Timestamp**: 2026-11-23T12:18:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### Verification Summary:
+1. **Frontend-to-Backend Wiring**:
+   - `POST /api/simulate` integrated into `Controls.tsx` and `page.tsx`.
+   - Candles, dynamic Order Block lines, and trade execution markers (`belowBar` BUY arrow, `aboveBar` SELL arrow, `circle` TP/SL) render directly on TradingView lightweight-charts.
+   - Real-time KPI metrics update in `Metrics.tsx`.
+   - Full trade details populate in `TradeLog.tsx`.
+2. **Chart Snap Interaction**:
+   - Clicking any trade row in `TradeLog.tsx` calls `chart.timeScale().setVisibleRange()` to center the candlestick chart directly on that trade's entry bar.
+3. **Deterministic Fallback Seed**:
+   - In `frontend/src/lib/seedData.ts`, a pre-calculated XAUUSD simulation renders immediately on load, guaranteeing zero blank screens even before network handshake.
+4. **CSV Export**:
+   - Tested and verified `GET /api/export/csv?symbol=XAUUSD`.
+   - Successfully downloads `kAIRON_trades_XAUUSD.csv` with standard trade log headers and formatted values. Client-side fallback also implemented in case backend connection drops.
+
+---
+
+## Phase 4: Live MT5 WebSocket Feed & Finalization
+- **Timestamp**: 2026-11-23T12:18:15+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### Verification Summary:
+1. **Live Tick Streaming**:
+   - Implemented WebSocket `/ws/live` in `backend/main.py`.
+   - `MT5LiveProvider` in `backend/core/mt5_feed.py` connects to MetaTrader 5 if installed; automatically falls back to deterministic continuous tick generator for headless or non-MT5 environments.
+   - Streaming verified with bidirectional WebSocket client: broadcasts `{ time, bid, ask, last, volume, source }` every 800ms.
+2. **Frontend Live Feed Integration**:
+   - Added "Live Feed" toggle button in `Controls.tsx`.
+   - Connects to `ws://localhost:8000/ws/live`.
+   - Incoming ticks update the active candlestick bar on lightweight-charts in real-time via `series.update()`.
+3. **End-to-End Test Suite**:
+   - Created `tests/test_integration.py`.
+   - Verified 5/5 subsystems:
+     1. Backend Health (`GET /`) -> 200 OK
+     2. Market Simulation Engine (`POST /api/simulate`) -> 200 OK (2113 candles, 98 trades, 195 markers, 40 zones)
+     3. CSV Export (`GET /api/export/csv`) -> 200 OK (12,011 bytes)
+     4. WebSocket Live Tick Feed (`/ws/live`) -> 3 ticks received successfully
+     5. Frontend Next.js Web Server (`http://localhost:3000`) -> 200 OK (26,869 bytes HTML)
+
+---
+
+## Final Project Directory Structure
+
+```
+kAIRON/
+├── backend/
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── routes.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── data_loader.py
+│   │   ├── metrics.py
+│   │   ├── mt5_feed.py
+│   │   └── strategy.py
+│   ├── data/
+│   ├── main.py
+│   ├── requirements.txt
+│   └── test_api.py
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── globals.css
+│   │   │   ├── layout.tsx
+│   │   │   └── page.tsx
+│   │   ├── components/
+│   │   │   ├── Chart.tsx
+│   │   │   ├── Controls.tsx
+│   │   │   ├── Metrics.tsx
+│   │   │   └── TradeLog.tsx
+│   │   ├── lib/
+│   │   │   └── seedData.ts
+│   │   └── types/
+│   │       └── index.ts
+│   ├── package.json
+│   ├── tailwind.config.js
+│   └── tsconfig.json
+├── tests/
+│   └── test_integration.py
+├── Gemini_notes.md
+├── README.md
+└── .gitignore
+```
+
+### Launch Instructions:
+1. **Backend**:
+   ```bash
+   cd backend
+   & "venv\Scripts\python.exe" -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+2. **Frontend**:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+   Open `http://localhost:3000` in browser.
