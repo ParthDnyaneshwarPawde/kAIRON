@@ -31,6 +31,7 @@ import {
   Settings,
   Eye,
   EyeOff,
+  Database,
 } from "lucide-react";
 import { CustomIndicator } from "@/components/CustomIndicatorModal";
 import {
@@ -106,6 +107,7 @@ interface ChartProps {
   customIndicators?: CustomIndicator[];
   onRemoveCustomIndicator?: (id: string) => void;
   onOpenIndicatorModal?: () => void;
+  onOpenAIDataModal?: () => void;
 }
 
 export const Chart: React.FC<ChartProps> = ({
@@ -123,6 +125,7 @@ export const Chart: React.FC<ChartProps> = ({
   customIndicators = [],
   onRemoveCustomIndicator,
   onOpenIndicatorModal,
+  onOpenAIDataModal,
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1651,6 +1654,18 @@ export const Chart: React.FC<ChartProps> = ({
             >
               <Sliders className="w-3 h-3" />
               <span>+ Indicator</span>
+            </button>
+          )}
+
+          {/* Order Block AI Data Sheet Exporter Button */}
+          {onOpenAIDataModal && (
+            <button
+              onClick={onOpenAIDataModal}
+              className="px-2 py-0.5 rounded text-[10px] font-bold transition-all flex items-center space-x-1 bg-[#ff9800]/15 text-[#ff9800] hover:bg-[#ff9800]/30 border border-[#ff9800]/30 shadow-xs"
+              title="Export 3-Month AI Continuous Bar Feed & Zone Lifecycles (CSV / ZIP)"
+            >
+              <Database className="w-3 h-3 text-[#ff9800]" />
+              <span>AI Feed</span>
             </button>
           )}
 

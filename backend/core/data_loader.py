@@ -135,6 +135,7 @@ def fetch_real_market_data(symbol: str, timeframe: str = "15m", days: int = 30) 
 
 def generate_deterministic_ticks(
     symbol: str = "XAUUSD",
+    timeframe: str = "15m",
     days: int = 30,
     base_price: float = 3610.0,
     seed: int = 42
@@ -148,12 +149,25 @@ def generate_deterministic_ticks(
     end_time = datetime.datetime.now(datetime.timezone.utc)
     start_time = end_time - datetime.timedelta(days=days)
     
-    date_range = pd.date_range(start=start_time, end=end_time, freq="15min")
+    freq_map = {
+        "1m": "1min",
+        "5m": "5min",
+        "15m": "15min",
+        "1h": "1h",
+        "4h": "4h",
+        "1d": "1D"
+    }
+    freq = freq_map.get(timeframe, "15min")
+    date_range = pd.date_range(start=start_time, end=end_time, freq=freq)
     date_range = date_range[date_range.dayofweek < 5]
     n = len(date_range)
+    if n == 0:
+        date_range = pd.date_range(start=start_time, end=end_time, freq="15min")
+        n = len(date_range)
     
     volatility = 0.16 if "XAU" in symbol else 0.08
-    dt = 15.0 / (24 * 60)
+    minutes_map = {"1m": 1.0, "5m": 5.0, "15m": 15.0, "1h": 60.0, "4h": 240.0, "1d": 1440.0}
+    dt = minutes_map.get(timeframe, 15.0) / (24 * 60)
     sigma = volatility * math.sqrt(dt)
     
     hours = date_range.hour.values
@@ -232,16 +246,17 @@ def get_or_create_data(
         except Exception:
             pass
 
-    # 5. Fallback to biquote if deep history unavailable
-    df_bq = fetch_biquote_market_data(symbol=symbol, timeframe=timeframe, limit=200)
-    if df_bq is not None and len(df_bq) > 10:
-        return df_bq, "biquote (MT5 Broker - Recent)"
+    # 5. Fallback to biquote if deep history unavailable and short window requested
+    if days <= 7:
+        df_bq = fetch_biquote_market_data(symbol=symbol, timeframe=timeframe, limit=200)
+        if df_bq is not None and len(df_bq) > 10:
+            return df_bq, "biquote (MT5 Broker - Recent)"
             
-    # 6. Fallback to calibrated generator
+    # 6. Fallback to calibrated generator (provides full requested historical depth, e.g. 30d, 90d, 1y)
     base_price = 3610.0 if "XAU" in symbol.upper() else (1.1000 if "EUR" in symbol.upper() else 1.3000)
-    df_gen = generate_deterministic_ticks(symbol=symbol, days=days, base_price=base_price)
+    df_gen = generate_deterministic_ticks(symbol=symbol, timeframe=timeframe, days=days, base_price=base_price)
     try:
         df_gen.to_parquet(parquet_path, index=False)
     except Exception:
         pass
-    return df_gen, "Calibrated Engine"
+    return df_gen, f"Calibrated Market Engine ({len(df_gen)} bars, {days}d)"

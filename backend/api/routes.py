@@ -4,6 +4,8 @@ import csv
 import json
 import datetime
 from typing import Optional, List, Dict, Any
+import numpy as np
+import pandas as pd
 from fastapi import APIRouter, Query, Response, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -11,6 +13,7 @@ from pydantic import BaseModel, Field
 from core.data_loader import get_or_create_data
 from core.strategy import run_pivot_order_block_simulation
 from core.metrics import calculate_metrics
+from core.ob_exporter import compute_order_block_datasets, export_to_csv_string, create_export_zip
 
 router = APIRouter(prefix="/api")
 
@@ -336,4 +339,156 @@ async def delete_custom_indicator(indicator_id: str):
         os.remove(filepath)
         return {"status": "success", "message": f"Indicator {indicator_id} deleted"}
     raise HTTPException(status_code=404, detail="Indicator not found")
+
+# =========================================================================
+# Order Block & Bar Feed AI Data Sheet Exporter
+# =========================================================================
+
+@router.get("/export/ob-feed")
+async def export_ob_feed(
+    symbol: str = Query("XAUUSD", description="Market symbol e.g. XAUUSD"),
+    timeframe: str = Query("15m", description="Candle timeframe e.g. 1m, 5m, 15m, 1h, 1d"),
+    days: int = Query(90, ge=1, le=365, description="Historical depth in days"),
+    left_len: int = Query(10, ge=2, le=50, description="Left pivot lookback bars"),
+    right_len: int = Query(10, ge=2, le=50, description="Right pivot lookback bars"),
+    source_type: str = Query("wicks", description="'wicks' or 'close'")
+):
+    """
+    Exports continuous bar-by-bar OHLCV market feed enriched with real-time Order Block events:
+    - zone_event (ZONE_START, ZONE_CONFIRMED, ZONE_TEST, ZONE_CLOSED, NONE)
+    - event_zone_id (e.g. OB_20261119_1700_BULL)
+    - inside_zone_ids, active_bull_count, active_bear_count
+    - nearest_bull_id, nearest_bull_dist_pts, nearest_bear_id, nearest_bear_dist_pts
+    """
+    try:
+        df, _ = get_or_create_data(symbol=symbol, timeframe=timeframe, days=days)
+        df_bars, _ = compute_order_block_datasets(
+            df, symbol=symbol, timeframe=timeframe, left_len=left_len, right_len=right_len, source_type=source_type
+        )
+        csv_str = export_to_csv_string(df_bars)
+        filename = f"{symbol}_{timeframe}_{days}d_order_block_feed.csv"
+        return Response(
+            content=csv_str,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate bar feed: {str(e)}")
+
+@router.get("/export/ob-zones")
+async def export_ob_zones(
+    symbol: str = Query("XAUUSD", description="Market symbol e.g. XAUUSD"),
+    timeframe: str = Query("15m", description="Candle timeframe e.g. 1m, 5m, 15m, 1h, 1d"),
+    days: int = Query(90, ge=1, le=365, description="Historical depth in days"),
+    left_len: int = Query(10, ge=2, le=50, description="Left pivot lookback bars"),
+    right_len: int = Query(10, ge=2, le=50, description="Right pivot lookback bars"),
+    source_type: str = Query("wicks", description="'wicks' or 'close'")
+):
+    """
+    Exports master zone lifecycle companion table (1 row per confirmed Order Block):
+    - Origin point (time, bar index, OHLCV, top/bottom prices)
+    - Confirmation point (time, confirmation candle close, lag bars)
+    - Tests & reactions (touch count, max favorable reaction points)
+    - Closure / Invalidation (closure time, price, reason, lifespan bars & minutes)
+    """
+    try:
+        df, _ = get_or_create_data(symbol=symbol, timeframe=timeframe, days=days)
+        _, df_zones = compute_order_block_datasets(
+            df, symbol=symbol, timeframe=timeframe, left_len=left_len, right_len=right_len, source_type=source_type
+        )
+        csv_str = export_to_csv_string(df_zones)
+        filename = f"{symbol}_{timeframe}_{days}d_order_block_lifecycles.csv"
+        return Response(
+            content=csv_str,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate zone companion: {str(e)}")
+
+@router.get("/export/ob-bundle")
+async def export_ob_bundle(
+    symbol: str = Query("XAUUSD", description="Market symbol e.g. XAUUSD"),
+    timeframe: str = Query("15m", description="Candle timeframe e.g. 1m, 5m, 15m, 1h, 1d"),
+    days: int = Query(90, ge=1, le=365, description="Historical depth in days"),
+    left_len: int = Query(10, ge=2, le=50, description="Left pivot lookback bars"),
+    right_len: int = Query(10, ge=2, le=50, description="Right pivot lookback bars"),
+    source_type: str = Query("wicks", description="'wicks' or 'close'")
+):
+    """
+    Exports a single ZIP archive containing both:
+    1. Continuous Bar Feed CSV ({symbol}_{timeframe}_{days}d_bar_datafeed.csv)
+    2. Master Zone Companion CSV ({symbol}_{timeframe}_{days}d_zone_lifecycle_companions.csv)
+    Ready for zero-effort upload into ChatGPT, Claude, Gemini, or pandas.
+    """
+    try:
+        df, _ = get_or_create_data(symbol=symbol, timeframe=timeframe, days=days)
+        df_bars, df_zones = compute_order_block_datasets(
+            df, symbol=symbol, timeframe=timeframe, left_len=left_len, right_len=right_len, source_type=source_type
+        )
+        prefix = f"{symbol}_{timeframe}_{days}d"
+        zip_bytes = create_export_zip(df_bars, df_zones, prefix)
+        filename = f"{prefix}_order_block_ai_bundle.zip"
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate AI export bundle: {str(e)}")
+
+@router.get("/export/ob-preview")
+async def export_ob_preview(
+    symbol: str = Query("XAUUSD", description="Market symbol e.g. XAUUSD"),
+    timeframe: str = Query("15m", description="Candle timeframe e.g. 1m, 5m, 15m, 1h, 1d"),
+    days: int = Query(90, ge=1, le=365, description="Historical depth in days"),
+    left_len: int = Query(10, ge=2, le=50, description="Left pivot lookback bars"),
+    right_len: int = Query(10, ge=2, le=50, description="Right pivot lookback bars"),
+    source_type: str = Query("wicks", description="'wicks' or 'close'")
+):
+    """
+    Returns quick preview statistics and recent sample rows for the UI preview modal.
+    """
+    try:
+        df, data_source = get_or_create_data(symbol=symbol, timeframe=timeframe, days=days)
+        df_bars, df_zones = compute_order_block_datasets(
+            df, symbol=symbol, timeframe=timeframe, left_len=left_len, right_len=right_len, source_type=source_type
+        )
+        
+        active_count = int((df_zones["status"] == "ACTIVE").sum()) if not df_zones.empty else 0
+        closed_count = int((df_zones["status"] == "CLOSED_INVALIDATED").sum()) if not df_zones.empty else 0
+        bullish_count = int((df_zones["type"] == "BULLISH").sum()) if not df_zones.empty else 0
+        bearish_count = int((df_zones["type"] == "BEARISH").sum()) if not df_zones.empty else 0
+        
+        # Replace NaN with None or string for valid JSON
+        bars_sample = df_bars.tail(12).replace({np.nan: None}).to_dict(orient="records") if not df_bars.empty else []
+        zones_sample = df_zones.tail(10).replace({np.nan: None}).to_dict(orient="records") if not df_zones.empty else []
+        
+        return {
+            "status": "success",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "days": days,
+            "data_source": data_source,
+            "total_bars": len(df_bars),
+            "total_zones": len(df_zones),
+            "active_zones": active_count,
+            "closed_zones": closed_count,
+            "bullish_zones": bullish_count,
+            "bearish_zones": bearish_count,
+            "sample_bars": bars_sample,
+            "sample_zones": zones_sample
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Preview failed: {str(e)}")
+
 

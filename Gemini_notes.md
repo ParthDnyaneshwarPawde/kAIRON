@@ -510,15 +510,53 @@ kAIRON/
 
 ---
 
-## Cleanup: Removed Cluttered Legacy Order Block Price Line Badges
-- **Timestamp**: 2026-11-23T19:25:00+05:30
+## Phase 6: Order Block AI Data Sheet & Continuous Feed Exporter
+- **Timestamp**: 2026-11-23T20:45:00+05:30
 - **Status**: COMPLETED & VERIFIED
 
-### Changes:
-- **Removed Cluttered Axis Badges**:
-  - Completely stripped legacy `createPriceLine` calls that drew dashed lines across the entire chart and generated stacked red/green tags ("Bullish OB Top", "Bearish OB Bottom") on the right price scale.
-  - Left the right price axis 100% clean, dedicated only to the real-time asset price, crosshair levels, and custom indicator values.
-  - All Order Block analysis is now exclusively handled by the Pine Script v6 Pivot Order Block shaded rectangular zones and confirmed candlestick labels.
+### Overview & User Goal:
+Enabled exporting institutional, machine-learning-ready datasets of Order Block price action and lifecycles spanning up to 3 months (90 days) across multiple timeframes (primarily `15m`, alongside `1m`, `5m`, `1h`, `1d`). Provides two cross-referenced datasets linked by unique timestamped zone IDs (`OB_YYYYMMDD_HHMM_BULL` / `BEAR`) to train or prompt AI models (ChatGPT, Claude, Gemini, or pandas ML pipelines).
+
+### 1. Dual Dataset Architecture:
+- **Dataset A: Continuous Bar-by-Bar Feed (`{symbol}_{tf}_{days}d_order_block_feed.csv`)**:
+  - Full chronological OHLCV candle stream.
+  - `zone_event`: `ZONE_START` (pivot origin), `ZONE_CONFIRMED` (breakout validation), `ZONE_TEST` (touch of active zone), `ZONE_CLOSED` (invalidation close), or `NONE`.
+  - `event_zone_id`: Cross-referencing ID of the Order Block experiencing the event.
+  - `inside_zone_ids`: Semicolon-delimited list of all Order Blocks actively containing the current candle.
+  - `active_bull_count` & `active_bear_count`: Running count of unviolated support/resistance zones.
+  - `nearest_bull_id`, `nearest_bull_dist_pts`, `nearest_bear_id`, `nearest_bear_dist_pts`: Real-time proximity to nearest active order blocks.
+- **Dataset B: Master Zone Lifecycle Companion (`{symbol}_{tf}_{days}d_order_block_lifecycles.csv`)**:
+  - Exactly 1 row per confirmed Order Block.
+  - **Zone ID & Bounds**: `zone_id`, `symbol`, `timeframe`, `type` (`BULLISH`/`BEARISH`), `top_price`, `bottom_price`, `height_pts`.
+  - **Origin Point**: `origin_time`, `origin_bar_idx`, `origin_open`, `origin_high`, `origin_low`, `origin_close`, `origin_volume`.
+  - **Confirmation Point**: `confirm_time`, `confirm_bar_idx`, `confirm_close`, `confirm_delay_bars` (delay lag).
+  - **Lifecycle Metrics**: `test_touch_count` (retests), `max_reaction_pts` (depth of favorable move).
+  - **Closure / Invalidation**: `close_time`, `close_bar_idx`, `close_price`, `close_reason`, `status` (`ACTIVE` / `CLOSED_INVALIDATED`), `lifespan_bars`, `lifespan_minutes`.
+- **Dataset C: AI Training Bundle (`.zip`)**:
+  - In-memory compressed ZIP packaging both Dataset A and Dataset B for 1-click drag-and-drop into LLM chat interfaces.
+
+### 2. Backend Engine (`backend/core/ob_exporter.py` & `backend/api/routes.py`):
+- `backend/core/ob_exporter.py`:
+  - `compute_order_block_datasets(df, symbol, timeframe, left_len, right_len, source_type)`
+  - `export_to_csv_string(df)`
+  - `create_export_zip(df_bars, df_zones, prefix)`
+- Endpoints in `backend/api/routes.py`:
+  - `GET /api/export/ob-feed`: Returns Dataset A CSV.
+  - `GET /api/export/ob-zones`: Returns Dataset B CSV.
+  - `GET /api/export/ob-bundle`: Returns Dataset C ZIP archive.
+  - `GET /api/export/ob-preview`: Returns metadata, total counts, active/closed counts, and JSON samples for instant modal preview.
+
+### 3. Frontend Interactive Modal (`frontend/src/components/AIDataSheetModal.tsx`):
+- Multi-timeframe pills (`1m`, `5m`, `15m ★`, `1h`, `1d`).
+- Range selector (`7D`, `30D`, `60D`, `90D (3 Months) ★`, `1Y`).
+- KPI metric ribbon: Total Candles, Total OB Zones, Active Zones, Closed Zones, Bullish vs Bearish breakdown.
+- 3 Export Action Cards: Bar Feed CSV, Zone Lifecycles CSV, and Complete AI Bundle ZIP.
+- Multi-tab Preview:
+  - Tab 1: Monospace Zone Lifecycles table with status badges and reaction metrics.
+  - Tab 2: Monospace Bar Feed table with real-time zone events and distance to nearest support/resistance.
+  - Tab 3: Pre-formatted AI Prompt Template with 1-click clipboard copy for ChatGPT/Claude/Gemini.
+- Header button `AI Data Feed` in top navigation and inside Chart toolbar.
+
 
 
 

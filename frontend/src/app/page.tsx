@@ -7,6 +7,7 @@ import { Watchlist } from "@/components/Watchlist";
 import { StrategyTesterView } from "@/components/StrategyTesterView";
 import { CustomIndicatorModal, CustomIndicator } from "@/components/CustomIndicatorModal";
 import { CustomStrategyModal } from "@/components/CustomStrategyModal";
+import { AIDataSheetModal } from "@/components/AIDataSheetModal";
 import {
   SimulationParams,
   SimulationResponse,
@@ -84,6 +85,7 @@ export default function Home() {
   // Custom Indicators & Strategies Importer Modals
   const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState<boolean>(false);
   const [isStrategyModalOpen, setIsStrategyModalOpen] = useState<boolean>(false);
+  const [isAIDataModalOpen, setIsAIDataModalOpen] = useState<boolean>(false);
   const [activeCustomIndicators, setActiveCustomIndicators] = useState<CustomIndicator[]>([]);
   const [activeStrategyName, setActiveStrategyName] = useState<string>("Pivot Order Blocks");
 
@@ -403,6 +405,16 @@ export default function Home() {
             <span className="hidden md:inline">+ Indicator</span>
           </button>
 
+          {/* AI Data Feed & Zone Lifecycles Exporter Button */}
+          <button
+            onClick={() => setIsAIDataModalOpen(true)}
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border border-[#ff9800]/50 bg-[#ff9800]/10 text-[#ff9800] hover:bg-[#ff9800]/20 transition-all shadow-sm shadow-[#ff9800]/15"
+            title="Export 3-Month AI Continuous Bar Feed & Zone Lifecycles (CSV / ZIP)"
+          >
+            <Database className="w-3.5 h-3.5 text-[#ff9800]" />
+            <span className="hidden sm:inline">AI Data Feed</span>
+          </button>
+
           {/* Live Feed Toggle */}
           <button
             onClick={handleToggleLiveFeed}
@@ -489,6 +501,7 @@ export default function Home() {
                   customIndicators={activeCustomIndicators}
                   onRemoveCustomIndicator={handleRemoveCustomIndicator}
                   onOpenIndicatorModal={() => setIsIndicatorModalOpen(true)}
+                  onOpenAIDataModal={() => setIsAIDataModalOpen(true)}
                 />
               </div>
 
@@ -621,6 +634,14 @@ export default function Home() {
         onClose={() => setIsStrategyModalOpen(false)}
         params={params}
         onStrategySuccess={handleCustomStrategySuccess}
+      />
+
+      {/* Order Block AI Data Sheet & Feed Exporter Modal */}
+      <AIDataSheetModal
+        isOpen={isAIDataModalOpen}
+        onClose={() => setIsAIDataModalOpen(false)}
+        currentSymbol={params.symbol}
+        currentTimeframe={params.timeframe}
       />
     </main>
   );
