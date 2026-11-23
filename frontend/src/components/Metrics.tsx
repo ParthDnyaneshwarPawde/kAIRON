@@ -1,8 +1,8 @@
 "use client";
 
 import React from "react";
-import { DollarSign, Percent, TrendingUp, ShieldAlert, Activity } from "lucide-react";
 import { MetricsData } from "@/types";
+import { TrendingUp, TrendingDown, Shield, Target, DollarSign, Wallet } from "lucide-react";
 
 interface MetricsProps {
   metrics: MetricsData;
@@ -12,117 +12,71 @@ export const Metrics: React.FC<MetricsProps> = ({ metrics }) => {
   const isProfitable = metrics.net_profit >= 0;
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-      {/* 1. Net Profit */}
-      <div className="bg-[#121721] border border-[#21262d] rounded-xl p-3.5 shadow-md flex flex-col justify-between">
-        <div className="flex items-center justify-between text-slate-400 mb-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider">
-            Net Profit (PnL)
-          </span>
-          <DollarSign
-            className={`w-4 h-4 ${isProfitable ? "text-emerald-400" : "text-rose-400"}`}
-          />
+    <div className="bg-[#090d14] border border-[#1b2333] rounded-lg px-4 py-2.5 shadow-md flex flex-wrap items-center justify-between gap-y-2 gap-x-6 text-xs select-none">
+      {/* 1. Net PnL */}
+      <div className="flex items-center space-x-2">
+        <div className={`p-1.5 rounded ${isProfitable ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}>
+          {isProfitable ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
         </div>
         <div>
-          <div
-            className={`text-lg sm:text-xl font-bold font-mono ${
-              isProfitable ? "text-emerald-400" : "text-rose-400"
-            }`}
-          >
-            {isProfitable ? "+" : ""}${metrics.net_profit.toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">
-            Avg/Trade: ${metrics.avg_trade.toFixed(2)}
-          </div>
+          <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Net PnL</span>
+          <span className={`font-mono font-bold text-sm ${isProfitable ? "text-emerald-400" : "text-rose-400"}`}>
+            {isProfitable ? "+" : ""}${metrics.net_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
         </div>
       </div>
 
       {/* 2. Win Rate */}
-      <div className="bg-[#121721] border border-[#21262d] rounded-xl p-3.5 shadow-md flex flex-col justify-between">
-        <div className="flex items-center justify-between text-slate-400 mb-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider">
-            Win Rate
-          </span>
-          <Percent className="w-4 h-4 text-blue-400" />
+      <div className="flex items-center space-x-2">
+        <div className="p-1.5 rounded bg-blue-500/10 text-blue-400">
+          <Target className="w-3.5 h-3.5" />
         </div>
         <div>
-          <div className="text-lg sm:text-xl font-bold font-mono text-white">
-            {metrics.win_rate.toFixed(1)}%
-          </div>
-          <div className="text-[10px] text-slate-400 mt-0.5 flex space-x-1.5">
-            <span className="text-emerald-400 font-semibold">{metrics.wins}W</span>
-            <span>/</span>
-            <span className="text-rose-400 font-semibold">{metrics.losses}L</span>
-            <span className="text-slate-500">({metrics.total_trades} trades)</span>
+          <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Win Rate</span>
+          <div className="flex items-center space-x-1.5 font-mono">
+            <span className="font-bold text-white text-sm">{metrics.win_rate.toFixed(1)}%</span>
+            <span className="text-[10px] text-slate-500">({metrics.wins}W / {metrics.losses}L)</span>
           </div>
         </div>
       </div>
 
       {/* 3. Profit Factor */}
-      <div className="bg-[#121721] border border-[#21262d] rounded-xl p-3.5 shadow-md flex flex-col justify-between">
-        <div className="flex items-center justify-between text-slate-400 mb-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider">
-            Profit Factor
-          </span>
-          <TrendingUp className="w-4 h-4 text-purple-400" />
+      <div className="flex items-center space-x-2">
+        <div className="p-1.5 rounded bg-purple-500/10 text-purple-400">
+          <DollarSign className="w-3.5 h-3.5" />
         </div>
         <div>
-          <div
-            className={`text-lg sm:text-xl font-bold font-mono ${
-              metrics.profit_factor >= 1.5
-                ? "text-emerald-400"
-                : metrics.profit_factor >= 1.0
-                ? "text-blue-400"
-                : "text-amber-400"
-            }`}
-          >
+          <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Profit Factor</span>
+          <span className={`font-mono font-bold text-sm ${metrics.profit_factor >= 1.2 ? "text-emerald-400" : "text-amber-400"}`}>
             {metrics.profit_factor.toFixed(2)}
-          </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">
-            Gross: +${metrics.gross_profit.toLocaleString()}
-          </div>
+          </span>
         </div>
       </div>
 
       {/* 4. Max Drawdown */}
-      <div className="bg-[#121721] border border-[#21262d] rounded-xl p-3.5 shadow-md flex flex-col justify-between">
-        <div className="flex items-center justify-between text-slate-400 mb-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider">
-            Max Drawdown
-          </span>
-          <ShieldAlert className="w-4 h-4 text-amber-400" />
+      <div className="flex items-center space-x-2">
+        <div className="p-1.5 rounded bg-amber-500/10 text-amber-400">
+          <Shield className="w-3.5 h-3.5" />
         </div>
         <div>
-          <div className="text-lg sm:text-xl font-bold font-mono text-amber-400">
-            {metrics.max_drawdown.toFixed(2)}%
-          </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">
-            -${metrics.max_drawdown_usd.toLocaleString()} peak-to-trough
+          <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Max Drawdown</span>
+          <div className="flex items-center space-x-1 font-mono">
+            <span className="font-bold text-amber-400 text-sm">{metrics.max_drawdown.toFixed(2)}%</span>
+            <span className="text-[10px] text-slate-500">(-${metrics.max_drawdown_usd.toLocaleString()})</span>
           </div>
         </div>
       </div>
 
-      {/* 5. Terminal Balance */}
-      <div className="bg-[#121721] border border-[#21262d] rounded-xl p-3.5 shadow-md flex flex-col justify-between col-span-2 sm:col-span-1">
-        <div className="flex items-center justify-between text-slate-400 mb-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider">
-            Account Balance
-          </span>
-          <Activity className="w-4 h-4 text-cyan-400" />
+      {/* 5. Account Equity */}
+      <div className="flex items-center space-x-2">
+        <div className="p-1.5 rounded bg-cyan-500/10 text-cyan-400">
+          <Wallet className="w-3.5 h-3.5" />
         </div>
         <div>
-          <div className="text-lg sm:text-xl font-bold font-mono text-cyan-300">
-            ${(metrics.final_balance || 100000 + metrics.net_profit).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">
-            Base: ${(metrics.initial_balance || 100000).toLocaleString()}
-          </div>
+          <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Account Equity</span>
+          <span className="font-mono font-bold text-sm text-cyan-300">
+            ${(metrics.final_balance || 100000 + metrics.net_profit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
         </div>
       </div>
     </div>

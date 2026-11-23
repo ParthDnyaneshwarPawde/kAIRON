@@ -12,17 +12,17 @@ import {
   LiveTick,
 } from "@/types";
 import { generateSeedSimulation } from "@/lib/seedData";
-import { Terminal, Cpu, Activity, AlertCircle } from "lucide-react";
+import { Terminal, Activity, AlertCircle, Sparkles } from "lucide-react";
 
-// Dynamically import Chart to disable SSR (lightweight-charts uses window/canvas)
+// Dynamically import Chart to disable SSR (lightweight-charts requires window/canvas)
 const Chart = dynamic(() => import("@/components/Chart"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full min-h-[460px] bg-[#090c10] rounded-xl border border-[#21262d] flex items-center justify-center">
+    <div className="w-full h-full min-h-[500px] bg-[#070a0f] rounded-xl border border-[#1b2333] flex items-center justify-center">
       <div className="flex flex-col items-center space-y-3">
         <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
         <span className="text-xs text-slate-400 font-mono">
-          Initializing Canvas & WebGL...
+          Loading TradingView Canvas...
         </span>
       </div>
     </div>
@@ -50,7 +50,11 @@ export default function Home() {
   const [serverStatus, setServerStatus] = useState<"connected" | "connecting" | "offline">("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const chartApiRef = useRef<{ scrollToTime: (time: number) => void } | null>(null);
+  const chartApiRef = useRef<{ 
+    scrollToTime: (time: number) => void;
+    fitContent: () => void;
+    jumpToLive: () => void;
+  } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   // Run Simulation API call
@@ -75,7 +79,7 @@ export default function Home() {
       setServerStatus("connected");
     } catch (err: any) {
       console.warn("Backend simulate error, fallback seed preserved:", err);
-      setErrorMessage(err.message || "Failed to reach simulation engine. Check backend server.");
+      setErrorMessage(err.message || "Could not reach backend engine. Showing real-calibrated seed data.");
       setServerStatus("offline");
     } finally {
       setIsLoading(false);
@@ -155,7 +159,6 @@ export default function Home() {
   // Live WebSocket Feed Toggle
   const handleToggleLiveFeed = () => {
     if (isLiveActive) {
-      // Disconnect
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -163,7 +166,6 @@ export default function Home() {
       setIsLiveActive(false);
       setLiveTick(null);
     } else {
-      // Connect
       setIsLiveActive(true);
       const wsUrl = BACKEND_URL.replace("http://", "ws://").replace("https://", "wss://") + "/ws/live";
       try {
@@ -203,31 +205,26 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="border-b border-[#1b2230] bg-[#0b0f17]/90 backdrop-blur-md px-4 py-3 sticky top-0 z-30 flex items-center justify-between">
+    <main className="min-h-screen bg-[#06080e] text-slate-100 flex flex-col font-sans">
+      {/* Top Header */}
+      <header className="border-b border-[#141b27] bg-[#090d14] px-4 py-2 sticky top-0 z-30 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-600 to-amber-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Terminal className="w-4 h-4 text-white" />
+          <div className="w-7 h-7 rounded-md bg-gradient-to-tr from-blue-600 via-indigo-600 to-amber-500 flex items-center justify-center shadow-md">
+            <Terminal className="w-3.5 h-3.5 text-white" />
           </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-extrabold text-base tracking-wider text-white">
-                k<span className="text-amber-400">AIRON</span>
-              </span>
-              <span className="text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                PRO TERMINAL
-              </span>
-            </div>
-            <div className="text-[10px] text-slate-400">
-              Gold & Forex Order Block Engine with Dynamic ATR/RR
-            </div>
+          <div className="flex items-center space-x-2">
+            <span className="font-black text-sm tracking-wide text-white">
+              k<span className="text-amber-400">AIRON</span>
+            </span>
+            <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              TRADINGVIEW ENGINE
+            </span>
           </div>
         </div>
 
+        {/* Server & Engine Status */}
         <div className="flex items-center space-x-3">
-          {/* Server status pill */}
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-[#121722] border border-[#232b3b] text-xs">
+          <div className="flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-[#101725] border border-[#1b2537] text-xs">
             <span
               className={`w-2 h-2 rounded-full ${
                 serverStatus === "connected"
@@ -237,40 +234,38 @@ export default function Home() {
                   : "bg-rose-400"
               }`}
             />
-            <span className="text-[11px] font-medium text-slate-300">
-              {serverStatus === "connected" ? "Engine Active" : serverStatus === "connecting" ? "Connecting" : "Offline Seed"}
+            <span className="text-[10px] font-semibold text-slate-300">
+              {serverStatus === "connected" ? "Live Feed Engine Active" : serverStatus === "connecting" ? "Connecting" : "Offline Seed"}
             </span>
-          </div>
-
-          <div className="hidden md:flex items-center space-x-1.5 text-xs text-slate-400 bg-[#121722] px-2.5 py-1 rounded-lg border border-[#232b3b]">
-            <Cpu className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="font-mono text-[11px]">v1.0.0</span>
           </div>
         </div>
       </header>
 
-      {/* Main Workspace */}
-      <div className="flex-1 p-3 sm:p-4 md:p-6 space-y-4 max-w-[1720px] w-full mx-auto">
-        {/* Error Alert if backend unreachable */}
+      {/* Main TradingView Workspace */}
+      <div className="flex-1 p-2 sm:p-3 space-y-2.5 max-w-[1850px] w-full mx-auto flex flex-col">
+        {/* Error notification if backend drops */}
         {errorMessage && (
-          <div className="bg-rose-950/40 border border-rose-500/40 rounded-xl p-3 flex items-center justify-between text-rose-300 text-xs">
+          <div className="bg-rose-950/40 border border-rose-500/40 rounded-lg p-2.5 flex items-center justify-between text-rose-300 text-xs">
             <div className="flex items-center space-x-2">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>{errorMessage} (Displaying seed simulation). Ensure FastAPI backend is running on port 8000.</span>
+              <span>{errorMessage} (Run `run_backend.bat` to connect live engine).</span>
             </div>
             <button
               onClick={() => handleRunSimulation()}
-              className="px-2.5 py-1 bg-rose-600/30 hover:bg-rose-600/50 rounded text-[11px] font-semibold text-white"
+              className="px-2 py-0.5 bg-rose-600/30 hover:bg-rose-600/50 rounded text-[11px] font-semibold text-white"
             >
               Retry
             </button>
           </div>
         )}
 
-        {/* Strategy Controls Bar */}
+        {/* Compact Strategy & Market Navigation Bar */}
         <Controls
           params={params}
-          onChange={setParams}
+          onChange={(newParams) => {
+            setParams(newParams);
+            handleRunSimulation(newParams);
+          }}
           onRunSimulation={() => handleRunSimulation()}
           onExportCSV={handleExportCSV}
           isLoading={isLoading}
@@ -279,13 +274,13 @@ export default function Home() {
           onToggleLiveFeed={handleToggleLiveFeed}
         />
 
-        {/* Quantitative Performance KPI Cards */}
+        {/* Compact TradingView KPI Ribbon */}
         <Metrics metrics={data.metrics} />
 
-        {/* Interactive Chart & Trade Log Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[520px]">
-          {/* Main Candlestick Chart (2 cols on wide) */}
-          <div className="lg:col-span-2 h-[480px] lg:h-full">
+        {/* Main Chart Canvas & Execution Log Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-2.5 flex-1 min-h-[580px]">
+          {/* Main Candlestick Chart (Takes 3 columns on wide displays) */}
+          <div className="lg:col-span-3 h-[520px] lg:h-full flex flex-col">
             <Chart
               candles={data.candles}
               markers={data.markers}
@@ -299,8 +294,8 @@ export default function Home() {
             />
           </div>
 
-          {/* Trade Execution Log Table (1 col on wide) */}
-          <div className="lg:col-span-1 h-[480px] lg:h-full">
+          {/* Trade Execution Log (Takes 1 column on wide displays) */}
+          <div className="lg:col-span-1 h-[520px] lg:h-full flex flex-col">
             <TradeLog
               trades={data.trades}
               onSelectTrade={handleSelectTrade}

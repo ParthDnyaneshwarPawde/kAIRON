@@ -13,14 +13,28 @@ import {
   MouseEventParams,
 } from "lightweight-charts";
 import { CandleData, MarkerData, ZoneData, LiveTick } from "@/types";
-import { Eye, EyeOff, Maximize2, Activity, Layers, BarChart2 } from "lucide-react";
+import { 
+  ZoomIn, 
+  ZoomOut, 
+  Maximize2, 
+  ChevronsRight, 
+  BarChart2, 
+  Layers, 
+  TrendingUp,
+  SlidersHorizontal,
+  Info
+} from "lucide-react";
 
 interface ChartProps {
   candles: CandleData[];
   markers: MarkerData[];
   zones: ZoneData[];
   liveTick?: LiveTick | null;
-  onChartReady?: (api: { scrollToTime: (time: number) => void }) => void;
+  onChartReady?: (api: { 
+    scrollToTime: (time: number) => void;
+    fitContent: () => void;
+    jumpToLive: () => void;
+  }) => void;
   symbol?: string;
   timeframe?: string;
 }
@@ -49,7 +63,7 @@ export const Chart: React.FC<ChartProps> = ({
   const [showEMA50, setShowEMA50] = useState<boolean>(true);
   const [showZones, setShowZones] = useState<boolean>(true);
 
-  // Hovered Bar Info state for Crosshair HUD
+  // Hovered Bar Info for TradingView HUD
   const [hoveredBar, setHoveredBar] = useState<{
     timeStr: string;
     open: number;
@@ -72,17 +86,17 @@ export const Chart: React.FC<ChartProps> = ({
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: "#070a0f" },
-        textColor: "#94a3b8",
+        background: { type: ColorType.Solid, color: "#090d14" },
+        textColor: "#788294",
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: "#131b26" },
-        horzLines: { color: "#131b26" },
+        vertLines: { color: "#131b28" },
+        horzLines: { color: "#131b28" },
       },
       crosshair: {
-        mode: 1, // Normal crosshair
+        mode: 1,
         vertLine: {
           color: "#38bdf8",
           width: 1,
@@ -100,15 +114,17 @@ export const Chart: React.FC<ChartProps> = ({
         borderColor: "#1e293b",
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 12,
-        barSpacing: 8,
+        rightOffset: 15,
+        barSpacing: 10,
+        minBarSpacing: 3,
       },
       rightPriceScale: {
         borderColor: "#1e293b",
         scaleMargins: {
           top: 0.08,
-          bottom: 0.22, // Space reserved for volume histogram
+          bottom: 0.2,
         },
+        autoScale: true,
       },
     });
 
@@ -165,7 +181,7 @@ export const Chart: React.FC<ChartProps> = ({
     ema20SeriesRef.current = ema20Series;
     ema50SeriesRef.current = ema50Series;
 
-    // Crosshair Move Handler for TradingView HUD
+    // Crosshair HUD Subscriber
     chart.subscribeCrosshairMove((param: MouseEventParams) => {
       if (!param.time || !param.seriesData || param.point === undefined) {
         setHoveredBar(null);
@@ -200,7 +216,7 @@ export const Chart: React.FC<ChartProps> = ({
       }
     });
 
-    // Resize observer
+    // Responsive Canvas Resize
     const resizeObserver = new ResizeObserver((entries) => {
       if (!entries || entries.length === 0 || !containerRef.current || !chartRef.current) return;
       const { width, height } = entries[0].contentRect;
@@ -208,20 +224,32 @@ export const Chart: React.FC<ChartProps> = ({
     });
     resizeObserver.observe(containerRef.current);
 
+    // Provide robust programmatic navigation API
     if (onChartReady) {
       onChartReady({
         scrollToTime: (targetTime: number) => {
           if (!chartRef.current || !candleSeriesRef.current) return;
-          try {
-            const timeScale = chartRef.current.timeScale();
-            timeScale.scrollToPosition(0, true);
-            const range = {
-              from: (targetTime - 3600 * 12) as Time,
-              to: (targetTime + 3600 * 12) as Time,
-            };
-            timeScale.setVisibleRange(range);
-          } catch (e) {
-            console.warn("Could not scroll to time range:", e);
+          // Find the bar index corresponding to the target trade timestamp
+          const idx = candles.findIndex((c) => Math.abs(c.time - targetTime) <= 1800);
+          if (idx !== -1) {
+            // Show ~60 bars centered on the trade bar (NEVER single candle!)
+            chartRef.current.timeScale().setVisibleLogicalRange({
+              from: Math.max(0, idx - 35),
+              to: Math.min(candles.length - 1, idx + 35),
+            });
+          }
+        },
+        fitContent: () => {
+          if (chartRef.current) {
+            chartRef.current.timeScale().fitContent();
+          }
+        },
+        jumpToLive: () => {
+          if (chartRef.current && candles.length > 0) {
+            chartRef.current.timeScale().setVisibleLogicalRange({
+              from: Math.max(0, candles.length - 75),
+              to: candles.length + 5,
+            });
           }
         },
       });
@@ -234,13 +262,12 @@ export const Chart: React.FC<ChartProps> = ({
         chartRef.current = null;
       }
     };
-  }, [onChartReady, symbol]);
+  }, [onChartReady, symbol, candles]);
 
-  // Sync Data
+  // Load and format candles
   useEffect(() => {
     if (!candleSeriesRef.current || !candles || candles.length === 0) return;
 
-    // 1. Candles
     const formattedCandles = candles.map((c) => ({
       time: c.time as UTCTimestamp,
       open: c.open,
@@ -251,7 +278,7 @@ export const Chart: React.FC<ChartProps> = ({
     candleSeriesRef.current.setData(formattedCandles);
     lastCandleRef.current = candles[candles.length - 1];
 
-    // 2. Volume
+    // Volume
     if (volumeSeriesRef.current) {
       const formattedVolume = candles.map((c) => ({
         time: c.time as UTCTimestamp,
@@ -261,7 +288,7 @@ export const Chart: React.FC<ChartProps> = ({
       volumeSeriesRef.current.setData(formattedVolume);
     }
 
-    // 3. 20 EMA
+    // EMAs
     if (ema20SeriesRef.current) {
       const ema20Data = candles
         .filter((c) => c.ema20 !== undefined && c.ema20 !== null)
@@ -272,7 +299,6 @@ export const Chart: React.FC<ChartProps> = ({
       ema20SeriesRef.current.setData(ema20Data);
     }
 
-    // 4. 50 EMA
     if (ema50SeriesRef.current) {
       const ema50Data = candles
         .filter((c) => c.ema50 !== undefined && c.ema50 !== null)
@@ -283,7 +309,7 @@ export const Chart: React.FC<ChartProps> = ({
       ema50SeriesRef.current.setData(ema50Data);
     }
 
-    // 5. Markers
+    // Markers
     if (markers && markers.length > 0) {
       const formattedMarkers = markers.map((m) => ({
         time: m.time as UTCTimestamp,
@@ -298,22 +324,20 @@ export const Chart: React.FC<ChartProps> = ({
       candleSeriesRef.current.setMarkers([]);
     }
 
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
+    // Default view: Show the most recent ~85 candles (TradingView standard default view)
+    if (chartRef.current && candles.length > 0) {
+      chartRef.current.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, candles.length - 85),
+        to: candles.length + 5,
+      });
     }
   }, [candles, markers]);
 
-  // Sync Indicator Visibility
+  // Sync Toggles
   useEffect(() => {
-    if (volumeSeriesRef.current) {
-      volumeSeriesRef.current.applyOptions({ visible: showVolume });
-    }
-    if (ema20SeriesRef.current) {
-      ema20SeriesRef.current.applyOptions({ visible: showEMA20 });
-    }
-    if (ema50SeriesRef.current) {
-      ema50SeriesRef.current.applyOptions({ visible: showEMA50 });
-    }
+    volumeSeriesRef.current?.applyOptions({ visible: showVolume });
+    ema20SeriesRef.current?.applyOptions({ visible: showEMA20 });
+    ema50SeriesRef.current?.applyOptions({ visible: showEMA50 });
   }, [showVolume, showEMA20, showEMA50]);
 
   // Sync Order Block Price Lines
@@ -363,32 +387,94 @@ export const Chart: React.FC<ChartProps> = ({
     });
   }, [zones, showZones]);
 
-  // Handle Real-Time Live Tick
+  // Handle Real-Time Live Tick (Proper Candle Updating & Bar Appending)
   useEffect(() => {
     if (!liveTick || !candleSeriesRef.current) return;
 
     const last = lastCandleRef.current;
     if (!last) return;
 
-    const updatedCandle = {
-      time: last.time as UTCTimestamp,
-      open: last.open,
-      high: Math.max(last.high, liveTick.bid),
-      low: Math.min(last.low, liveTick.bid),
-      close: liveTick.bid,
-    };
+    // Timeframe length in seconds
+    const tfSec = timeframe === "1m" ? 60 : timeframe === "5m" ? 300 : timeframe === "15m" ? 900 : timeframe === "1h" ? 3600 : 86400;
+    const currentBarPeriod = Math.floor(liveTick.time / tfSec) * tfSec;
 
-    lastCandleRef.current = updatedCandle;
-    try {
-      candleSeriesRef.current.update(updatedCandle);
-    } catch {}
-  }, [liveTick]);
-
-  const fitContent = useCallback(() => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
+    if (currentBarPeriod > last.time) {
+      // Form new bar
+      const newCandle: CandleData = {
+        time: currentBarPeriod,
+        open: liveTick.bid,
+        high: liveTick.bid,
+        low: liveTick.bid,
+        close: liveTick.bid,
+        volume: liveTick.volume || 10,
+        ema20: last.ema20,
+        ema50: last.ema50,
+      };
+      lastCandleRef.current = newCandle;
+      try {
+        candleSeriesRef.current.update({
+          time: newCandle.time as UTCTimestamp,
+          open: newCandle.open,
+          high: newCandle.high,
+          low: newCandle.low,
+          close: newCandle.close,
+        });
+      } catch {}
+    } else {
+      // Update existing bar
+      const updatedCandle = {
+        time: last.time as UTCTimestamp,
+        open: last.open,
+        high: Math.max(last.high, liveTick.bid),
+        low: Math.min(last.low, liveTick.bid),
+        close: liveTick.bid,
+      };
+      lastCandleRef.current = { ...last, ...updatedCandle };
+      try {
+        candleSeriesRef.current.update(updatedCandle);
+      } catch {}
     }
-  }, []);
+  }, [liveTick, timeframe]);
+
+  // Navigation handlers
+  const handleZoomIn = () => {
+    if (!chartRef.current) return;
+    const range = chartRef.current.timeScale().getVisibleLogicalRange();
+    if (range) {
+      const center = (range.from + range.to) / 2;
+      const span = (range.to - range.from) * 0.7;
+      chartRef.current.timeScale().setVisibleLogicalRange({
+        from: center - span / 2,
+        to: center + span / 2,
+      });
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (!chartRef.current) return;
+    const range = chartRef.current.timeScale().getVisibleLogicalRange();
+    if (range) {
+      const center = (range.from + range.to) / 2;
+      const span = (range.to - range.from) * 1.4;
+      chartRef.current.timeScale().setVisibleLogicalRange({
+        from: center - span / 2,
+        to: center + span / 2,
+      });
+    }
+  };
+
+  const handleFitContent = () => {
+    chartRef.current?.timeScale().fitContent();
+  };
+
+  const handleJumpToLive = () => {
+    if (chartRef.current && candles.length > 0) {
+      chartRef.current.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, candles.length - 75),
+        to: candles.length + 5,
+      });
+    }
+  };
 
   const latestCandle = candles[candles.length - 1];
   const displayBar = hoveredBar || (latestCandle ? {
@@ -410,112 +496,127 @@ export const Chart: React.FC<ChartProps> = ({
   const dec = symbol.includes("EUR") || symbol.includes("GBP") ? 5 : 2;
 
   return (
-    <div className="relative w-full h-full flex flex-col bg-[#070a0f] rounded-xl border border-[#1e293b] overflow-hidden shadow-2xl">
-      {/* Top TradingView-Style HUD & Indicator Toolbar */}
-      <div className="border-b border-[#131b26] bg-[#0b1017] px-4 py-2 flex flex-wrap items-center justify-between gap-2 z-20">
-        {/* Left: Market Symbol & Real-Time Candle Values */}
+    <div className="relative w-full h-full flex flex-col bg-[#070a0f] rounded-xl border border-[#1b2333] overflow-hidden shadow-2xl">
+      {/* TradingView Top Status & Indicator Bar */}
+      <div className="border-b border-[#141b27] bg-[#090d14] px-3 py-2 flex flex-wrap items-center justify-between gap-2 z-20 select-none">
+        {/* Left: Ticker & Crosshair HUD */}
         <div className="flex flex-wrap items-center space-x-3 text-xs">
           <div className="flex items-center space-x-2">
-            <span className="font-extrabold text-white text-sm tracking-wide">{symbol}</span>
+            <span className="font-extrabold text-white text-sm tracking-tight">{symbol}</span>
             <span className="bg-blue-500/20 text-blue-400 font-bold px-1.5 py-0.5 rounded text-[10px]">
               {timeframe}
             </span>
           </div>
 
           {displayBar && (
-            <div className="hidden sm:flex items-center space-x-2.5 font-mono text-[11px] text-slate-300">
-              <span className="text-slate-500">{displayBar.timeStr}</span>
-              <span>O: <strong className="text-white">{displayBar.open.toFixed(dec)}</strong></span>
+            <div className="flex flex-wrap items-center space-x-2 font-mono text-[11px] text-slate-300">
+              <span className="text-slate-500 hidden md:inline">{displayBar.timeStr}</span>
+              <span>O: <strong className="text-slate-200">{displayBar.open.toFixed(dec)}</strong></span>
               <span>H: <strong className="text-emerald-400">{displayBar.high.toFixed(dec)}</strong></span>
               <span>L: <strong className="text-rose-400">{displayBar.low.toFixed(dec)}</strong></span>
               <span>C: <strong className={displayBar.change >= 0 ? "text-emerald-400" : "text-rose-400"}>
                 {displayBar.close.toFixed(dec)}
               </strong></span>
               {displayBar.volume > 0 && (
-                <span className="text-slate-400">Vol: <strong>{displayBar.volume.toLocaleString()}</strong></span>
+                <span className="hidden sm:inline text-slate-400">Vol: <strong className="text-slate-200">{displayBar.volume.toLocaleString()}</strong></span>
               )}
-              <span className={`font-semibold ${displayBar.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+              <span className={`font-bold ${displayBar.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                 {displayBar.change >= 0 ? "+" : ""}{displayBar.change.toFixed(dec)} ({displayBar.changePct.toFixed(2)}%)
               </span>
             </div>
           )}
         </div>
 
-        {/* Right: Indicator Toggles & Reset Zoom */}
-        <div className="flex items-center space-x-1.5 text-[11px]">
-          {/* Volume toggle */}
+        {/* Right: Indicators & Drawing Overlays */}
+        <div className="flex items-center space-x-1 text-[11px]">
           <button
             onClick={() => setShowVolume(!showVolume)}
-            className={`px-2 py-1 rounded font-semibold transition-colors flex items-center space-x-1 ${
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors flex items-center space-x-1 ${
               showVolume ? "bg-slate-800 text-blue-400 border border-blue-500/30" : "text-slate-500 hover:text-slate-300"
             }`}
-            title="Toggle Volume Histogram"
+            title="Toggle Volume"
           >
-            <BarChart2 className="w-3 h-3" />
-            <span>Vol</span>
+            <span>VOL</span>
           </button>
 
-          {/* EMA 20 toggle */}
           <button
             onClick={() => setShowEMA20(!showEMA20)}
-            className={`px-2 py-1 rounded font-semibold transition-colors ${
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
               showEMA20 ? "bg-blue-500/20 text-blue-400 border border-blue-500/40" : "text-slate-500 hover:text-slate-300"
             }`}
-            title="Toggle 20-period Exponential Moving Average"
+            title="Toggle 20 EMA"
           >
             EMA20
           </button>
 
-          {/* EMA 50 toggle */}
           <button
             onClick={() => setShowEMA50(!showEMA50)}
-            className={`px-2 py-1 rounded font-semibold transition-colors ${
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
               showEMA50 ? "bg-amber-500/20 text-amber-400 border border-amber-500/40" : "text-slate-500 hover:text-slate-300"
             }`}
-            title="Toggle 50-period Exponential Moving Average"
+            title="Toggle 50 EMA"
           >
             EMA50
           </button>
 
-          {/* Order Block Zones toggle */}
           <button
             onClick={() => setShowZones(!showZones)}
-            className={`px-2 py-1 rounded font-semibold transition-colors flex items-center space-x-1 ${
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors flex items-center space-x-1 ${
               showZones ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40" : "text-slate-500 hover:text-slate-300"
             }`}
             title="Toggle Order Block Zones"
           >
-            <Layers className="w-3 h-3" />
-            <span>OB Zones ({zones.filter((z) => z.active).length})</span>
-          </button>
-
-          {/* Fit zoom */}
-          <button
-            onClick={fitContent}
-            className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-            title="Reset Zoom to Fit All Data"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
+            <span>OB ZONES</span>
           </button>
         </div>
       </div>
 
-      {/* Floating Real-Time Live Price Pill */}
+      {/* Real-time Floating Live Spot Badge */}
       {liveTick && (
-        <div className="absolute top-12 left-4 z-10 flex items-center space-x-2 bg-[#0d141e]/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-emerald-500/40 shadow-lg">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-          <span className="text-xs font-mono text-emerald-400 font-bold">
-            SPOT: {liveTick.bid.toFixed(dec)}
+        <div className="absolute top-11 left-3 z-10 flex items-center space-x-2 bg-[#090d14]/90 backdrop-blur-md px-2.5 py-1 rounded-md border border-emerald-500/40 shadow-lg select-none">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span className="text-[11px] font-mono text-emerald-400 font-bold">
+            LIVE: {liveTick.bid.toFixed(dec)}
           </span>
           <span className="text-[10px] text-slate-400">Ask: {liveTick.ask.toFixed(dec)}</span>
-          <span className="text-[9px] bg-emerald-950 text-emerald-400 font-mono px-1 rounded border border-emerald-500/30">
-            {liveTick.source}
-          </span>
         </div>
       )}
 
-      {/* Chart Canvas */}
-      <div ref={containerRef} className="w-full flex-1 min-h-[460px]" />
+      {/* Floating TradingView Chart Navigation Toolbar (Bottom-Right) */}
+      <div className="absolute bottom-6 right-16 z-20 flex items-center space-x-1 bg-[#101725]/90 backdrop-blur-md p-1 rounded-lg border border-[#222f46] shadow-xl">
+        <button
+          onClick={handleZoomIn}
+          className="p-1.5 rounded hover:bg-[#1a2538] text-slate-300 hover:text-white transition-colors"
+          title="Zoom In"
+        >
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={handleZoomOut}
+          className="p-1.5 rounded hover:bg-[#1a2538] text-slate-300 hover:text-white transition-colors"
+          title="Zoom Out"
+        >
+          <ZoomOut className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={handleFitContent}
+          className="p-1.5 rounded hover:bg-[#1a2538] text-slate-300 hover:text-white transition-colors"
+          title="Fit All Data to Screen"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={handleJumpToLive}
+          className="px-2 py-1 rounded bg-blue-600/30 hover:bg-blue-600/50 text-blue-400 hover:text-white text-[10px] font-bold flex items-center space-x-1 transition-colors"
+          title="Jump to Real-Time Latest Candle"
+        >
+          <ChevronsRight className="w-3 h-3" />
+          <span>LATEST</span>
+        </button>
+      </div>
+
+      {/* Main Lightweight-Charts Canvas */}
+      <div ref={containerRef} className="w-full flex-1 min-h-[500px]" />
     </div>
   );
 };

@@ -226,3 +226,30 @@ kAIRON/
   - **Historical Depth Selectors**: `7D`, `30D`, `60D`, `90D`, `1 Year`.
   - **Multi-Market Instruments**: `XAUUSD (Gold)`, `EURUSD`, `GBPUSD`, `BTCUSD`.
   - **Real-Time Live Streaming Toggle**: Switches between historical backtesting and active tick stream.
+
+---
+
+## Upgrade: TradingView Pro Minimalist UI & Single-Candle Zoom Bugfix
+- **Timestamp**: 2026-11-23T13:19:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### 1. Root Cause of the "Single Big Candle" Issue:
+- When clicking a trade in the trade log table, `scrollToTime` was setting a fixed ±12-hour timestamp range via `setVisibleRange`. On sparse timestamps or weekend gaps, this caused the canvas to zoom in excessively onto a single candle bar.
+- In `Chart.tsx`, updated `scrollToTime` to use `setVisibleLogicalRange({ from: idx - 35, to: idx + 35 })`. This guarantees that snapping to any trade always shows **70 continuous bars in full market context**, with the trade positioned squarely in the center.
+- Added live candle timeframe period calculation (`timeframeSec`): when the current bar period completes, a new bar opens automatically rather than stretching or overwriting past candles.
+
+### 2. TradingView Pro Minimalist UI Overhaul:
+- Replaced bulky sliders and oversized cards with a streamlined, institutional TradingView layout:
+  - Top bar with ticker symbols, resolution buttons (`1m`, `5m`, `15m`, `1h`, `1D`), and historical range pills (`7D`, `30D`, `60D`, `90D`, `1Y`).
+  - Expandable/collapsible "Parameters" drawer to keep the canvas clutter-free.
+  - Horizontal Bloomberg-style KPI ribbon (`Net PnL`, `Win Rate`, `Profit Factor`, `Max Drawdown`, `Account Equity`).
+  - Chart canvas expanded to occupy 75% width, with responsive Trade Log in the remaining 25%.
+- Added on-chart floating TradingView navigation toolbar:
+  - `Zoom In (+)`
+  - `Zoom Out (-)`
+  - `Fit All Data (⤢)`
+  - `LATEST (⏭)` jump button that instantly focuses the real-time live bars.
+
+### 3. Verified Real-Market Data Sources:
+- **Historical Data**: Real CME Comex Gold Futures (`GC=F`) for XAUUSD, Interbank Forex (`EURUSD=X`, `GBPUSD=X`) via real financial exchange APIs.
+- **Live Spot Streaming**: Real-time tick stream polled via `/ws/live` and pushed directly to active lightweight-charts series.
