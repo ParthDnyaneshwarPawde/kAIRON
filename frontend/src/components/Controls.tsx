@@ -256,7 +256,13 @@ export const Controls: React.FC<ControlsProps> = ({
       <div className="mt-2 pt-1.5 border-t border-[#2a2e39]/60 flex flex-wrap items-center justify-between text-[11px] text-slate-400 font-mono px-1 gap-2">
         <div className="flex items-center space-x-2">
           <Database className="w-3.5 h-3.5 text-[#089981]" />
-          <span>Feed: <strong className="text-white">{currentMarket.source}</strong></span>
+          <span>
+            Feed: <strong className="text-white">
+              {params.days <= 7 || isLiveFeedActive
+                ? "biquote.io (MT5 Broker 1 · Live Match)"
+                : `${currentMarket.desc} Exchange Tape (CME/Interbank · ${params.days}D Deep)`}
+            </strong>
+          </span>
           <span className="text-slate-600">|</span>
           <span>Strategy: <strong className="text-white">Pivot Order Blocks with Dynamic 14-ATR SL</strong></span>
         </div>

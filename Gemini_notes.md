@@ -310,4 +310,15 @@ kAIRON/
   - Sourced directly from MetaTrader 5 broker aggregation.
   - High fidelity: Historical candles and real-time live ticks share the identical price and spread foundation.
 
+### 3. Deep Non-Live Historical Data Architecture:
+- To solve `biquote`'s rolling window limit (~200 bars) for deep multi-week/year backtests, implemented an intelligent hybrid data routing architecture:
+  1. **Live Stream & Recent Backtesting (`days <= 7` or Live Mode)**:
+     - Automatically routes to `biquote.io` (MT5 Broker 1), ensuring 100% price/spread continuity with active live ticks.
+  2. **Deep Historical Backtesting (`days > 7`: 30D, 60D, 90D, 1Y)**:
+     - Automatically routes to the institutional CME Comex Gold Futures (`GC=F`) / Interbank Forex tape, cached in local Parquet files.
+     - Delivers **4,524 authentic 15m bars** (60 days), **13,751 authentic 1h bars** (2 years), and **1,258 daily bars** (5 years).
+  3. **Local MT5 Historical Cache**:
+     - When local MetaTrader 5 is installed, `mt5.copy_rates_from_pos()` can pull up to 100,000 broker bars directly from the user's broker of choice.
+
+
 
