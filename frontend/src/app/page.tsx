@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import { LeftToolbar } from "@/components/LeftToolbar";
 import { Watchlist } from "@/components/Watchlist";
 import { StrategyTesterView } from "@/components/StrategyTesterView";
+import { CustomIndicatorModal, CustomIndicator } from "@/components/CustomIndicatorModal";
+import { CustomStrategyModal } from "@/components/CustomStrategyModal";
 import {
   SimulationParams,
   SimulationResponse,
@@ -29,7 +31,10 @@ import {
   Sliders,
   RefreshCw,
   SlidersHorizontal,
-  ChevronRight
+  ChevronRight,
+  Cpu,
+  Layers,
+  Sparkles
 } from "lucide-react";
 import type { ChartApi } from "@/components/Chart";
 
@@ -75,6 +80,28 @@ export default function Home() {
   // Watchlist & Bottom Dock Toggles
   const [showWatchlist, setShowWatchlist] = useState<boolean>(true);
   const [showBottomDock, setShowBottomDock] = useState<boolean>(false);
+
+  // Custom Indicators & Strategies Importer Modals
+  const [isIndicatorModalOpen, setIsIndicatorModalOpen] = useState<boolean>(false);
+  const [isStrategyModalOpen, setIsStrategyModalOpen] = useState<boolean>(false);
+  const [activeCustomIndicators, setActiveCustomIndicators] = useState<CustomIndicator[]>([]);
+  const [activeStrategyName, setActiveStrategyName] = useState<string>("Pivot Order Blocks");
+
+  const handleApplyCustomIndicator = (ind: CustomIndicator) => {
+    setActiveCustomIndicators((prev) => {
+      const filtered = prev.filter((i) => i.id !== ind.id);
+      return [...filtered, ind];
+    });
+  };
+
+  const handleRemoveCustomIndicator = (id: string) => {
+    setActiveCustomIndicators((prev) => prev.filter((i) => i.id !== id));
+  };
+
+  const handleCustomStrategySuccess = (res: SimulationResponse) => {
+    setData(res);
+    setActiveStrategyName(res.source || "Custom Python Strategy");
+  };
 
   const chartApiRef = useRef<ChartApi | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -356,6 +383,26 @@ export default function Home() {
 
         {/* Right Header Actions */}
         <div className="flex items-center space-x-2">
+          {/* Custom Strategy Importer Button */}
+          <button
+            onClick={() => setIsStrategyModalOpen(true)}
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border border-[#00bcd4]/40 bg-[#00bcd4]/10 text-[#00bcd4] hover:bg-[#00bcd4]/20 transition-all shadow-sm shadow-[#00bcd4]/10"
+            title="Import, Download Templates & Run Custom Quantitative Strategies"
+          >
+            <Cpu className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">+ Strategy</span>
+          </button>
+
+          {/* Custom Indicator Importer Button */}
+          <button
+            onClick={() => setIsIndicatorModalOpen(true)}
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border border-[#a855f7]/40 bg-[#a855f7]/10 text-[#a855f7] hover:bg-[#a855f7]/20 transition-all shadow-sm shadow-[#a855f7]/10"
+            title="Import, Download Templates & Plot Custom Technical Indicators"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">+ Indicator</span>
+          </button>
+
           {/* Live Feed Toggle */}
           <button
             onClick={handleToggleLiveFeed}
@@ -439,6 +486,9 @@ export default function Home() {
                   timeframe={params.timeframe}
                   onRefresh={() => handleRunSimulation(params)}
                   isRefreshing={isLoading}
+                  customIndicators={activeCustomIndicators}
+                  onRemoveCustomIndicator={handleRemoveCustomIndicator}
+                  onOpenIndicatorModal={() => setIsIndicatorModalOpen(true)}
                 />
               </div>
 
@@ -552,9 +602,26 @@ export default function Home() {
             isLoading={isLoading}
             isExporting={isExporting}
             onSelectTrade={handleSelectTrade}
+            onOpenCustomStrategyModal={() => setIsStrategyModalOpen(true)}
           />
         )}
       </div>
+
+      {/* Custom Indicators Importer Modal */}
+      <CustomIndicatorModal
+        isOpen={isIndicatorModalOpen}
+        onClose={() => setIsIndicatorModalOpen(false)}
+        candles={data.candles}
+        onApplyIndicator={handleApplyCustomIndicator}
+      />
+
+      {/* Custom Strategies Importer Modal */}
+      <CustomStrategyModal
+        isOpen={isStrategyModalOpen}
+        onClose={() => setIsStrategyModalOpen(false)}
+        params={params}
+        onStrategySuccess={handleCustomStrategySuccess}
+      />
     </main>
   );
 }

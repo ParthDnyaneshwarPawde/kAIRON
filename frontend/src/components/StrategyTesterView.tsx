@@ -20,7 +20,8 @@ import {
   ArrowDownRight,
   BarChart3,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  Cpu
 } from "lucide-react";
 
 interface StrategyTesterViewProps {
@@ -32,6 +33,7 @@ interface StrategyTesterViewProps {
   isLoading: boolean;
   isExporting: boolean;
   onSelectTrade: (trade: Trade) => void;
+  onOpenCustomStrategyModal?: () => void;
 }
 
 export const StrategyTesterView: React.FC<StrategyTesterViewProps> = ({
@@ -43,6 +45,7 @@ export const StrategyTesterView: React.FC<StrategyTesterViewProps> = ({
   isLoading,
   isExporting,
   onSelectTrade,
+  onOpenCustomStrategyModal,
 }) => {
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
 
@@ -93,6 +96,17 @@ export const StrategyTesterView: React.FC<StrategyTesterViewProps> = ({
           </div>
 
           <div className="flex items-center space-x-2.5">
+            {onOpenCustomStrategyModal && (
+              <button
+                onClick={onOpenCustomStrategyModal}
+                className="flex items-center space-x-1.5 px-3 py-2 rounded-lg bg-[#00bcd4]/15 hover:bg-[#00bcd4]/25 text-[#00bcd4] border border-[#00bcd4]/30 font-bold text-xs transition-colors"
+                title="Import, Download Templates & Run Custom Quantitative Strategies"
+              >
+                <Cpu className="w-4 h-4" />
+                <span>Import Strategy</span>
+              </button>
+            )}
+
             <button
               onClick={() => onRunSimulation()}
               disabled={isLoading}

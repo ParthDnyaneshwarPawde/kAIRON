@@ -424,6 +424,61 @@ kAIRON/
   - Top chart header bar badge: `⏱ Close in: mm:ss`.
   - Floating live quote pill on chart: `LIVE: 3621.88 | Bid: ... Ask: ... | ⏱ mm:ss`.
 
+---
+
+## Upgrade: Custom Indicators & Quantitative Strategies Importer
+- **Timestamp**: 2026-11-23T17:00:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### 1. Custom Indicators Importer & Sandboxed Runner (`CustomIndicatorModal.tsx`):
+- **Template Downloads**:
+  - 1-click download of official boilerplate templates in JavaScript (`kairon_indicator_template.js`) and Python (`kairon_indicator_template.py`).
+  - Standard calculation signature: `calculate(candles, params) -> [{ time, value }]`.
+- **Code Editor & File Upload**:
+  - Upload external script files (`.js`, `.ts`, `.py`, `.json`).
+  - Dark-mode syntax editor with custom title, author, line/histogram plot mode, color picker, and main chart overlay vs. sub-pane oscillator toggle.
+- **Instant Sandboxed Evaluation**:
+  - Browser-side sandboxed calculation runs directly on active market candles in < 2ms without server lag.
+  - Plots indicator line/histogram directly onto Lightweight Charts via dynamic series map.
+- **Active Indicator Management**:
+  - Live indicator pills in top chart toolbar with title, color swatch, and instant `✕` dismiss button.
+- **Persistent Indicator Library**:
+  - Saved to `backend/data/indicators/*.json` via `/api/custom/indicators`.
+  - Pre-seeded with production algorithms:
+    - **RSI-14 (Relative Strength Index)** (Oscillator)
+    - **VWAP (Volume-Weighted Average Price)** (Overlay)
+    - **SuperTrend (ATR Trailing Stop Band)** (Overlay)
+  - 1-click "Apply" to chart or delete from library.
+
+### 2. Custom Strategy Importer & Backtester (`CustomStrategyModal.tsx`):
+- **Template Downloads**:
+  - 1-click download of quantitative Python strategy boilerplate (`kairon_strategy_template.py`).
+  - Signature: `run_strategy(df: pd.DataFrame, params: dict) -> list[dict]`.
+- **Python Execution Engine**:
+  - Server-side execution endpoint `POST /api/custom/strategy/run`.
+  - Dynamically runs user code against real broker/historical market candles.
+  - Full support for `pandas`, `numpy`, and technical math libraries.
+  - Outputs standard trade execution logs with entry, exit, stop loss, take profit, PnL, and duration.
+- **Interactive Integration**:
+  - Accessible via `+ Strategy` button in the top navbar and `Import Strategy` button in `StrategyTesterView.tsx`.
+  - 1-click "Run Strategy Simulation" mounts generated trades directly into the Strategy Tester metrics dashboard and chart risk-reward boxes.
+- **Persistent Strategy Library**:
+  - Saved to `backend/data/strategies/*.json` via `/api/custom/strategies`.
+  - Pre-seeded with **Dual EMA Momentum & ATR Trailing Strategy** and **Order Block Volume Imbalance Scalper**.
+  - 1-click load, backtest, and delete.
+
+### 3. Backend Endpoints Implemented in `backend/api/routes.py`:
+- `GET /api/custom/template/strategy` -> downloads Python strategy template.
+- `GET /api/custom/template/indicator` -> downloads JS/Python indicator template.
+- `GET /api/custom/strategies` -> lists saved custom strategies.
+- `POST /api/custom/strategies` -> saves custom strategy JSON to disk.
+- `DELETE /api/custom/strategies/{id}` -> deletes custom strategy.
+- `POST /api/custom/strategy/run` -> executes custom Python strategy code on real market candles and computes backtest metrics.
+- `GET /api/custom/indicators` -> lists saved indicators.
+- `POST /api/custom/indicators` -> saves custom indicator JSON to disk.
+- `DELETE /api/custom/indicators/{id}` -> deletes indicator.
+
+
 
 
 

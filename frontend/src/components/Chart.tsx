@@ -25,8 +25,11 @@ import {
   X,
   RefreshCw,
   Clock,
-  Tag
+  Tag,
+  Sliders,
+  Sparkles
 } from "lucide-react";
+import { CustomIndicator } from "@/components/CustomIndicatorModal";
 
 export interface ChartApi {
   scrollToTime: (time: number) => void;
@@ -59,6 +62,9 @@ interface ChartProps {
   timeframe?: string;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  customIndicators?: CustomIndicator[];
+  onRemoveCustomIndicator?: (id: string) => void;
+  onOpenIndicatorModal?: () => void;
 }
 
 export const Chart: React.FC<ChartProps> = ({
@@ -73,6 +79,9 @@ export const Chart: React.FC<ChartProps> = ({
   timeframe = "15m",
   onRefresh,
   isRefreshing = false,
+  customIndicators = [],
+  onRemoveCustomIndicator,
+  onOpenIndicatorModal,
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -90,6 +99,9 @@ export const Chart: React.FC<ChartProps> = ({
   const isFirstLoadRef = useRef<boolean>(true);
   const lastSymbolRef = useRef<string>(symbol);
   const lastTimeframeRef = useRef<string>(timeframe);
+
+  // Dynamic Custom Indicators Series Map
+  const customSeriesMapRef = useRef<Map<string, ISeriesApi<"Line" | "Histogram">>>(new Map());
 
   // Keep latest onChartReady callback ref
   useEffect(() => {
@@ -923,6 +935,56 @@ export const Chart: React.FC<ChartProps> = ({
     requestAnimationFrame(drawTradeBoxes);
   }, [liveTick, timeframe, drawTradeBoxes]);
 
+  // 6. Dynamic Custom Indicators Series Rendering
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const chart = chartRef.current;
+    const currentMap = customSeriesMapRef.current;
+    const activeIds = new Set(customIndicators.map((ci) => ci.id));
+
+    // Remove obsolete series
+    currentMap.forEach((series, id) => {
+      if (!activeIds.has(id)) {
+        try {
+          chart.removeSeries(series);
+        } catch {}
+        currentMap.delete(id);
+      }
+    });
+
+    // Add or update active series
+    customIndicators.forEach((ind) => {
+      let series = currentMap.get(ind.id);
+      if (!series) {
+        if (ind.type === "histogram") {
+          series = chart.addHistogramSeries({
+            color: ind.color || "#38bdf8",
+            priceFormat: { type: "volume" },
+            priceScaleId: ind.overlay ? "" : "sub",
+          });
+        } else {
+          series = chart.addLineSeries({
+            color: ind.color || "#38bdf8",
+            lineWidth: 2,
+            priceLineVisible: false,
+            lastValueVisible: true,
+          });
+        }
+        currentMap.set(ind.id, series);
+      }
+
+      if (ind.data && ind.data.length > 0) {
+        const sorted = [...ind.data]
+          .sort((a, b) => a.time - b.time)
+          .map((pt) => ({
+            time: pt.time as UTCTimestamp,
+            value: pt.value,
+          }));
+        series.setData(sorted);
+      }
+    });
+  }, [customIndicators]);
+
   // Dynamic Hit-Testing on MouseMove over wrapper:
   // Enables canvas pointer-events ONLY when hovering over handles, position box, or trade boxes,
   // so normal chart dragging/panning is NEVER blocked!
@@ -1386,6 +1448,42 @@ export const Chart: React.FC<ChartProps> = ({
           >
             OB Zones ({zones.length})
           </button>
+
+          <div className="h-3 w-px bg-[#2a2e39] mx-0.5" />
+
+          {/* Custom Indicators Importer Button */}
+          {onOpenIndicatorModal && (
+            <button
+              onClick={onOpenIndicatorModal}
+              className="px-2 py-0.5 rounded text-[10px] font-bold transition-all flex items-center space-x-1 bg-[#a855f7]/20 text-[#a855f7] hover:bg-[#a855f7]/40 shadow-sm shadow-[#a855f7]/20"
+              title="Import or Create Custom Technical Indicators"
+            >
+              <Sliders className="w-3 h-3" />
+              <span>+ Indicator</span>
+            </button>
+          )}
+
+          {/* Active Custom Indicator Pills */}
+          {customIndicators.map((ind) => (
+            <div
+              key={ind.id}
+              className="flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold border border-[#2a2e39] bg-[#131722]"
+              style={{ color: ind.color || "#38bdf8" }}
+              title={ind.description || ind.name}
+            >
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: ind.color || "#38bdf8" }} />
+              <span className="truncate max-w-[80px]">{ind.name}</span>
+              {onRemoveCustomIndicator && (
+                <button
+                  onClick={() => onRemoveCustomIndicator(ind.id)}
+                  className="text-slate-500 hover:text-white ml-0.5"
+                  title="Remove Indicator"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 

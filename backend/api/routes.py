@@ -1,8 +1,11 @@
+import os
 import io
 import csv
+import json
 import datetime
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Query, Response, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from core.data_loader import get_or_create_data
@@ -10,6 +13,47 @@ from core.strategy import run_pivot_order_block_simulation
 from core.metrics import calculate_metrics
 
 router = APIRouter(prefix="/api")
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+STRATEGIES_DIR = os.path.join(DATA_DIR, "strategies")
+INDICATORS_DIR = os.path.join(DATA_DIR, "indicators")
+TEMPLATES_DIR = os.path.join(DATA_DIR, "templates")
+
+os.makedirs(STRATEGIES_DIR, exist_ok=True)
+os.makedirs(INDICATORS_DIR, exist_ok=True)
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+
+# Models for Custom Indicator and Strategy Importer
+class CustomStrategyItem(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = ""
+    author: Optional[str] = "Trader"
+    code: str
+    language: Optional[str] = "python"
+    parameters: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    created_at: Optional[str] = None
+
+class CustomIndicatorItem(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = ""
+    color: Optional[str] = "#38bdf8"
+    type: Optional[str] = "line"
+    overlay: Optional[bool] = True
+    code: str
+    language: Optional[str] = "javascript"
+    parameters: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    created_at: Optional[str] = None
+
+class RunCustomStrategyRequest(BaseModel):
+    strategy_code: str
+    symbol: str = "XAUUSD"
+    timeframe: str = "15m"
+    days: int = 30
+    lookback: int = 5
+    rr_target: float = 2.5
+    spread: float = 0.25
 
 # In-memory storage for last completed simulation
 LAST_SIMULATION: Dict[str, Any] = {
@@ -141,3 +185,155 @@ async def export_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=kAIRON_trades_{symbol}.csv"}
     )
+
+# =========================================================================
+# Custom Indicator & Strategy Template Download Endpoints
+# =========================================================================
+
+@router.get("/custom/template/strategy")
+async def download_strategy_template():
+    filepath = os.path.join(TEMPLATES_DIR, "kairon_strategy_template.py")
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Strategy template not found")
+    return FileResponse(
+        path=filepath,
+        filename="kairon_strategy_template.py",
+        media_type="text/x-python"
+    )
+
+@router.get("/custom/template/indicator")
+async def download_indicator_template(lang: str = Query(default="javascript")):
+    filename = "kairon_indicator_template.py" if lang.lower() in ["python", "py"] else "kairon_indicator_template.js"
+    filepath = os.path.join(TEMPLATES_DIR, filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Indicator template not found")
+    media_type = "text/x-python" if lang.lower() in ["python", "py"] else "application/javascript"
+    return FileResponse(
+        path=filepath,
+        filename=filename,
+        media_type=media_type
+    )
+
+# =========================================================================
+# Custom Strategies Persistent Storage & Management
+# =========================================================================
+
+@router.get("/custom/strategies")
+async def list_custom_strategies():
+    strategies = []
+    for fname in os.listdir(STRATEGIES_DIR):
+        if fname.endswith(".json"):
+            try:
+                with open(os.path.join(STRATEGIES_DIR, fname), "r", encoding="utf-8") as f:
+                    strategies.append(json.load(f))
+            except Exception:
+                pass
+    return {"status": "success", "strategies": strategies}
+
+@router.post("/custom/strategies")
+async def save_custom_strategy(item: CustomStrategyItem):
+    if not item.created_at:
+        item.created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    filepath = os.path.join(STRATEGIES_DIR, f"{item.id}.json")
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(item.dict(), f, indent=2)
+    return {"status": "success", "message": f"Strategy '{item.name}' saved successfully", "strategy": item.dict()}
+
+@router.delete("/custom/strategies/{strategy_id}")
+async def delete_custom_strategy(strategy_id: str):
+    filepath = os.path.join(STRATEGIES_DIR, f"{strategy_id}.json")
+    if os.path.exists(filepath):
+        os.remove(filepath)
+        return {"status": "success", "message": f"Strategy {strategy_id} deleted"}
+    raise HTTPException(status_code=404, detail="Strategy not found")
+
+@router.post("/custom/strategy/run")
+async def run_custom_strategy(req: RunCustomStrategyRequest):
+    try:
+        # Load market data
+        df, data_source = get_or_create_data(
+            symbol=req.symbol,
+            timeframe=req.timeframe,
+            days=req.days,
+            source="biquote"
+        )
+        
+        # Execute custom python strategy in safe namespace
+        local_scope = {}
+        exec(req.strategy_code, {"pd": pd, "np": np}, local_scope)
+        
+        if "run_strategy" not in local_scope:
+            raise HTTPException(status_code=400, detail="Custom strategy must define a 'run_strategy(df, params)' function.")
+            
+        custom_func = local_scope["run_strategy"]
+        params = {
+            "symbol": req.symbol,
+            "lookback": req.lookback,
+            "rr_target": req.rr_target,
+            "spread": req.spread,
+            "timeframe": req.timeframe
+        }
+        
+        sim_res = custom_func(df, params)
+        trades = sim_res.get("trades", [])
+        metrics = calculate_metrics(trades)
+        
+        # Format candles
+        candles = []
+        for _, row in df.iterrows():
+            candles.append({
+                "time": int(pd.to_datetime(row["time"]).timestamp()),
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row.get("volume", 100))
+            })
+            
+        return {
+            "status": "success",
+            "symbol": req.symbol,
+            "timeframe": req.timeframe,
+            "source": f"{data_source} (Custom Strategy)",
+            "candles": candles,
+            "markers": sim_res.get("markers", []),
+            "zones": sim_res.get("zones", []),
+            "trades": trades,
+            "metrics": metrics
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Custom strategy execution error: {str(e)}")
+
+# =========================================================================
+# Custom Indicators Persistent Storage & Management
+# =========================================================================
+
+@router.get("/custom/indicators")
+async def list_custom_indicators():
+    indicators = []
+    for fname in os.listdir(INDICATORS_DIR):
+        if fname.endswith(".json"):
+            try:
+                with open(os.path.join(INDICATORS_DIR, fname), "r", encoding="utf-8") as f:
+                    indicators.append(json.load(f))
+            except Exception:
+                pass
+    return {"status": "success", "indicators": indicators}
+
+@router.post("/custom/indicators")
+async def save_custom_indicator(item: CustomIndicatorItem):
+    if not item.created_at:
+        item.created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    filepath = os.path.join(INDICATORS_DIR, f"{item.id}.json")
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(item.dict(), f, indent=2)
+    return {"status": "success", "message": f"Indicator '{item.name}' saved successfully", "indicator": item.dict()}
+
+@router.delete("/custom/indicators/{indicator_id}")
+async def delete_custom_indicator(indicator_id: str):
+    filepath = os.path.join(INDICATORS_DIR, f"{indicator_id}.json")
+    if os.path.exists(filepath):
+        os.remove(filepath)
+        return {"status": "success", "message": f"Indicator {indicator_id} deleted"}
+    raise HTTPException(status_code=404, detail="Indicator not found")
+
