@@ -17,8 +17,12 @@ import {
   TrendingDown,
   Info,
   Clock,
-  Target
+  Target,
+  Settings,
+  SlidersHorizontal,
 } from "lucide-react";
+import { PivotOBSettingsModal } from "@/components/PivotOBSettingsModal";
+import { PivotOBConfig, DEFAULT_PIVOT_OB_CONFIG } from "@/lib/pivotOB";
 
 interface AIDataSheetModalProps {
   isOpen: boolean;
@@ -97,8 +101,18 @@ export const AIDataSheetModal: React.FC<AIDataSheetModalProps> = ({
   const [symbol, setSymbol] = useState<string>(currentSymbol || "XAUUSD");
   const [timeframe, setTimeframe] = useState<string>(currentTimeframe || "15m");
   const [days, setDays] = useState<number>(90); // 3 months default
-  const [leftLen, setLeftLen] = useState<number>(10);
-  const [rightLen, setRightLen] = useState<number>(10);
+
+  // Load active Pivot OB indicator configuration (shared with chart)
+  const [pivotConfig, setPivotConfig] = useState<PivotOBConfig>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("kAIRON_pivot_ob_config");
+        if (saved) return JSON.parse(saved);
+      }
+    } catch {}
+    return DEFAULT_PIVOT_OB_CONFIG;
+  });
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<"zones" | "bars" | "ai_guide">("zones");
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -106,16 +120,26 @@ export const AIDataSheetModal: React.FC<AIDataSheetModalProps> = ({
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
   const [downloadingType, setDownloadingType] = useState<string | null>(null);
 
-  // Synchronize when currentSymbol changes
+  // Synchronize with chart config and symbol whenever modal opens
   useEffect(() => {
-    if (currentSymbol) setSymbol(currentSymbol);
-  }, [currentSymbol]);
+    if (isOpen) {
+      if (currentSymbol) setSymbol(currentSymbol);
+      if (currentTimeframe) setTimeframe(currentTimeframe);
+      try {
+        if (typeof window !== "undefined") {
+          const saved = localStorage.getItem("kAIRON_pivot_ob_config");
+          if (saved) setPivotConfig(JSON.parse(saved));
+        }
+      } catch {}
+    }
+  }, [isOpen, currentSymbol, currentTimeframe]);
 
-  // Fetch preview data whenever parameters change
+  // Fetch preview data whenever parameters or indicator settings change
   const fetchPreview = async () => {
     setIsLoading(true);
     try {
-      const url = `${BACKEND_URL}/api/export/ob-preview?symbol=${symbol}&timeframe=${timeframe}&days=${days}&left_len=${leftLen}&right_len=${rightLen}`;
+      const srcType = (pivotConfig.source || "Wicks").toLowerCase();
+      const url = `${BACKEND_URL}/api/export/ob-preview?symbol=${symbol}&timeframe=${timeframe}&days=${days}&left_len=${pivotConfig.leftLen}&right_len=${pivotConfig.rightLen}&source_type=${srcType}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -132,15 +156,16 @@ export const AIDataSheetModal: React.FC<AIDataSheetModalProps> = ({
     if (isOpen) {
       fetchPreview();
     }
-  }, [isOpen, symbol, timeframe, days, leftLen, rightLen]);
+  }, [isOpen, symbol, timeframe, days, pivotConfig.leftLen, pivotConfig.rightLen, pivotConfig.source]);
 
   if (!isOpen) return null;
 
-  // Trigger File Download
+  // Trigger File Download with user's active indicator settings
   const handleDownload = async (endpoint: string, fallbackFilename: string, typeKey: string) => {
     setDownloadingType(typeKey);
     try {
-      const url = `${BACKEND_URL}/api/export/${endpoint}?symbol=${symbol}&timeframe=${timeframe}&days=${days}&left_len=${leftLen}&right_len=${rightLen}`;
+      const srcType = (pivotConfig.source || "Wicks").toLowerCase();
+      const url = `${BACKEND_URL}/api/export/${endpoint}?symbol=${symbol}&timeframe=${timeframe}&days=${days}&left_len=${pivotConfig.leftLen}&right_len=${pivotConfig.rightLen}&source_type=${srcType}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error("Download request failed");
 
@@ -270,16 +295,32 @@ Please perform an in-depth machine learning / pattern analysis:
             </div>
           </div>
 
-          {/* Quick Refresh */}
-          <button
-            onClick={fetchPreview}
-            disabled={isLoading}
-            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] text-slate-300 hover:text-white text-xs transition-all disabled:opacity-50"
-            title="Recalculate datasets"
-          >
-            <RefreshCw className={`w-3 h-3 ${isLoading ? "animate-spin text-[#00bcd4]" : ""}`} />
-            <span>Recalculate</span>
-          </button>
+          {/* Right Action: Indicator Settings Button & Quick Refresh */}
+          <div className="flex items-center space-x-2">
+            {/* Pivot OB Indicator Settings Trigger */}
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-[#131722] hover:bg-[#252a37] border border-[#089981]/40 hover:border-[#089981] text-slate-200 text-xs font-semibold transition-all shadow-xs"
+              title="Change Indicator Left/Right Lookback, Source & Parameters"
+            >
+              <Settings className="w-3.5 h-3.5 text-[#089981]" />
+              <span>OB Settings:</span>
+              <span className="font-mono text-[#089981] font-bold">
+                {pivotConfig.leftLen}, {pivotConfig.rightLen} ({pivotConfig.source})
+              </span>
+            </button>
+
+            {/* Quick Refresh */}
+            <button
+              onClick={fetchPreview}
+              disabled={isLoading}
+              className="flex items-center space-x-1 px-2.5 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] text-slate-300 hover:text-white text-xs transition-all disabled:opacity-50"
+              title="Recalculate datasets"
+            >
+              <RefreshCw className={`w-3 h-3 ${isLoading ? "animate-spin text-[#00bcd4]" : ""}`} />
+              <span>Recalculate</span>
+            </button>
+          </div>
         </div>
 
         {/* Dataset Summary Metrics */}
@@ -646,6 +687,21 @@ Please perform an in-depth machine learning / pattern analysis:
           </div>
         </div>
       </div>
+      {/* Pivot OB Settings Modal */}
+      <PivotOBSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        config={pivotConfig}
+        onSaveConfig={(newCfg) => {
+          setPivotConfig(newCfg);
+          try {
+            if (typeof window !== "undefined") {
+              localStorage.setItem("kAIRON_pivot_ob_config", JSON.stringify(newCfg));
+            }
+          } catch {}
+          setIsSettingsOpen(false);
+        }}
+      />
     </div>
   );
 };
