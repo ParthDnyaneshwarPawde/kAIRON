@@ -420,6 +420,7 @@ export default function Home() {
               onZoomOut={() => chartApiRef.current?.fitContent()}
               onFitContent={() => chartApiRef.current?.fitContent()}
               onJumpToLive={() => chartApiRef.current?.jumpToLive()}
+              onCreatePositionTool={() => chartApiRef.current?.createPositionTool()}
             />
 
             {/* Central Chart Canvas (Takes Maximum Screen Real Estate) */}

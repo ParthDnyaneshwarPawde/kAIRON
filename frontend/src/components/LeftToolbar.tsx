@@ -20,6 +20,7 @@ interface LeftToolbarProps {
   onZoomOut?: () => void;
   onFitContent?: () => void;
   onJumpToLive?: () => void;
+  onCreatePositionTool?: () => void;
 }
 
 export const LeftToolbar: React.FC<LeftToolbarProps> = ({
@@ -27,6 +28,7 @@ export const LeftToolbar: React.FC<LeftToolbarProps> = ({
   onZoomOut,
   onFitContent,
   onJumpToLive,
+  onCreatePositionTool,
 }) => {
   const [activeTool, setActiveTool] = useState<string>("crosshair");
 
@@ -38,6 +40,13 @@ export const LeftToolbar: React.FC<LeftToolbarProps> = ({
     { id: "measure", icon: Ruler, label: "Price Range & Bar Measure" },
   ];
 
+  const handleToolClick = (id: string) => {
+    setActiveTool(id);
+    if (id === "positions" && onCreatePositionTool) {
+      onCreatePositionTool();
+    }
+  };
+
   return (
     <div className="w-11 bg-[#131722] border-r border-[#2a2e39] flex flex-col items-center py-2 space-y-1 select-none z-10 shrink-0">
       {/* Drawing / Analysis Tools */}
@@ -47,7 +56,7 @@ export const LeftToolbar: React.FC<LeftToolbarProps> = ({
         return (
           <button
             key={t.id}
-            onClick={() => setActiveTool(t.id)}
+            onClick={() => handleToolClick(t.id)}
             className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors relative group ${
               isActive
                 ? "bg-[#2962ff] text-white shadow-sm shadow-[#2962ff]/40"

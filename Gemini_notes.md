@@ -364,6 +364,36 @@ kAIRON/
 - **Responsive Panning & Zooming**: Integrated with `subscribeVisibleTimeRangeChange` and `subscribeVisibleLogicalRangeChange` inside `requestAnimationFrame` for buttery-smooth 60fps tracking during canvas drag and mousewheel zoom.
 - **On-Chart Header Toggle**: Added `TP/SL Areas` toggle button to enable/disable trade boxes instantly.
 
+---
+
+## Upgrade: Freely Draggable & Resizable TradingView Long/Short Position Tool with 60fps Lockstep Chart Tracking
+- **Timestamp**: 2026-11-23T15:35:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### 1. Freely Movable & Resizable Position Tool:
+- **Interactive Drag Handles**:
+  - **Take Profit (TP) Top/Bottom Handle**: White-bordered emerald circle at target level; drag vertically to adjust TP price in real time.
+  - **Stop Loss (SL) Bottom/Top Handle**: White-bordered crimson circle at stop level; drag vertically to adjust SL price in real time.
+  - **Duration (Right Edge) Handle**: White circle at entry line right boundary; drag horizontally to extend or shorten bar span.
+  - **Center Entry Handle & Body Drag**: Dragging the center handle or anywhere inside the position tool moves the entire position freely across both time (candlestick bars) and price levels simultaneously according to the user's will.
+- **Orientation Toggle (Long vs Short)**:
+  - Added dedicated on-chart `LONG` / `SHORT` toggle pill in the top header. 1-click flips between BUY and SELL, automatically swapping target and stop boundaries while preserving risk-to-reward ratios.
+  - Added `✕` button to dismiss the position tool when desired.
+- **Left Toolbar Integration**:
+  - Clicking the `Target` icon (Long / Short Risk-to-Reward Calculator) on `LeftToolbar.tsx` instantly places a new draggable position tool at the latest price.
+  - Also accessible via the on-chart `+ Position Tool` button in the top toolbar.
+
+### 2. Lockstep Chart Movement & Dynamic Hit-Testing:
+- **Zero Chart Interference**:
+  - The canvas overlay defaults to `pointer-events-none`.
+  - Dynamic hit-testing on the parent wrapper activates `pointer-events: auto` and changes cursor (`ns-resize`, `ew-resize`, `move`, `pointer`) **only** when hovering directly over handles or trade bodies.
+  - Empty space clicks pass directly to Lightweight Charts, allowing native left/right panning, vertical price scale dragging, and mousewheel zoom with 0 friction.
+- **60fps Continuous Synchronization**:
+  - Panning and zooming run a `requestAnimationFrame` loop that continuously recalculates `logicalToCoordinate` (X) and `priceToCoordinate` (Y), guaranteeing that all green and red areas remain pinned to their candlesticks at 60fps.
+- **1-Click Backtest Trade Selection**:
+  - Clicking on any backtest trade box on the chart mounts that trade directly into the interactive position tool, letting the user inspect and adjust its parameters on the fly.
+
+
 
 
 
