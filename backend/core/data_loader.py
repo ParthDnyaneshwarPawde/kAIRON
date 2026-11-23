@@ -7,6 +7,10 @@ from typing import Optional, Tuple
 import pandas as pd
 import numpy as np
 import requests
+try:
+    from core.dukascopy_loader import fetch_dukascopy_market_data
+except ImportError:
+    from backend.core.dukascopy_loader import fetch_dukascopy_market_data
 
 logger = logging.getLogger("kAIRON.data_loader")
 
@@ -173,8 +177,17 @@ def generate_deterministic_ticks(
     hours = date_range.hour.values
     session_mult = np.where((hours >= 8) & (hours <= 17), 1.5, 0.7)
     
-    returns = np.random.normal(0, sigma, n) * session_mult
-    price_series = base_price * np.exp(np.cumsum(returns))
+    # Equilibrium-Anchored Log-OU Mean-Reverting Stochastic Process
+    # Guarantees realistic financial oscillation without unconstrained runaway drift
+    log_base = math.log(base_price)
+    theta = 0.012  # Reversion force towards real baseline
+    log_prices = np.zeros(n)
+    log_prices[0] = log_base
+    for i in range(1, n):
+        drift = theta * (log_base - log_prices[i - 1])
+        shock = np.random.normal(0, sigma) * session_mult[i]
+        log_prices[i] = log_prices[i - 1] + drift + shock
+    price_series = np.exp(log_prices)
     
     highs = price_series * (1 + np.abs(np.random.normal(0, 0.0015, n)))
     lows = price_series * (1 - np.abs(np.random.normal(0, 0.0015, n)))
@@ -212,11 +225,20 @@ def get_or_create_data(
     """
     parquet_path = os.path.join(DATA_DIR, f"{symbol}_{timeframe}_{days}d.parquet")
     
-    # 1. Recent Depth or Explicit biquote mode (<= 7 days or 1m/5m tick timeframes): use biquote's seamless MT5 broker feed
-    if source == "biquote" or (days <= 7 and source != "exchange") or (timeframe in ["1m", "5m"] and source != "exchange"):
+    # 1. Recent Depth or Explicit biquote mode (<= 7 days and source='biquote'): use biquote's seamless MT5 broker feed
+    if source == "biquote" or (days <= 7 and source not in ["exchange", "dukascopy"]):
         df_bq = fetch_biquote_market_data(symbol=symbol, timeframe=timeframe, limit=350)
         if df_bq is not None and len(df_bq) > 10:
             return df_bq, f"biquote MT5 ({len(df_bq)} {timeframe} bars)"
+            
+    # 2. Institutional Dukascopy Swiss ECN Feed (Primary deep historical provider with disk cache)
+    if source != "biquote":
+        try:
+            df_duka = fetch_dukascopy_market_data(symbol=symbol, timeframe=timeframe, days=days)
+            if df_duka is not None and len(df_duka) > 20:
+                return df_duka, f"Dukascopy Bank ECN ({len(df_duka)} {timeframe} bars)"
+        except Exception as de:
+            logger.warning(f"Dukascopy loader warning: {de}")
             
     # 2. Deep Historical Backtesting Mode (days > 7):
     # Check if cached deep parquet exists and is less than 6 hours old

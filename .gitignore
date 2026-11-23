@@ -21,9 +21,13 @@ frontend/out/
 build/
 dist/
 
-# Parquet local data cache
+# Parquet & Dukascopy local data cache
 backend/data/*.parquet
 backend/data/*.tmp
+backend/data/*.csv.gz
+backend/data/dukascopy_cache/
+.dukascopy-cache/
+download/
 tick_vault_data/
 
 # OS / Editor
