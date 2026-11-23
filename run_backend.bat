@@ -7,13 +7,20 @@ echo.
 
 cd /d "%~dp0"
 
+echo [kAIRON] Checking and freeing port 8000 if occupied...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8000') do (
+    taskkill /F /PID %%a >nul 2>&1
+)
+
+echo [kAIRON] Starting Uvicorn on http://127.0.0.1:8000 ...
 if exist "backend\venv\Scripts\python.exe" (
-    echo [kAIRON] Using virtual environment: backend\venv
-    echo [kAIRON] Loading modules and starting server on http://127.0.0.1:8000 ...
     "backend\venv\Scripts\python.exe" -m uvicorn main:app --host 127.0.0.1 --port 8000 --app-dir backend --reload
 ) else (
-    echo [kAIRON] Loading modules with system python...
     python -m uvicorn main:app --host 127.0.0.1 --port 8000 --app-dir backend --reload
 )
 
+echo.
+echo ========================================================
+echo  Backend server has stopped. Window is kept open.
+echo ========================================================
 pause
