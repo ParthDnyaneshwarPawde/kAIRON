@@ -179,3 +179,19 @@ kAIRON/
    npm run dev
    ```
    Open `http://localhost:3000` in browser.
+
+---
+
+## Update: Environment Launcher Resolution & Scripts
+- **Timestamp**: 2026-11-23T12:24:15+05:30
+- **Status**: RESOLVED & COMMITTED
+
+### Issue Addressed:
+- `No module uvicorn` occurs when running `uvicorn` in global Windows command line without activating the virtual environment (`backend/venv`) or when Python Scripts directory is not on Windows PATH.
+
+### Solutions Provided:
+1. Installed `fastapi`, `uvicorn[standard]`, `websockets` in global Python environment so `python -m uvicorn` works globally.
+2. Created double-click launchers:
+   - `run_backend.bat` & `run_backend.ps1`: Automatically activates `backend/venv/Scripts/python.exe` and launches Uvicorn on port 8000.
+   - `run_frontend.bat` & `run_frontend.ps1`: Automatically starts Next.js development server on port 3000.
+3. Updated launch commands in README.md.
