@@ -583,6 +583,33 @@ Enabled exporting institutional, machine-learning-ready datasets of Order Block 
    - `GET /api/export/ob-preview?days=90` -> 7,433 Dukascopy bars, 404 zones, ending at 3,660.0.
    - `POST /api/simulate` -> 2,456 candles, 103 trades, status 200 OK.
 
+---
+
+## Phase 8: Expanded Pivot Lookback Parameter Range (`left_len` & `right_len` up to 500)
+- **Timestamp**: 2026-11-23T22:46:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### Issue Encountered:
+- When the user customized Pivot Order Block settings to macro swing parameters (e.g., `leftLen = 100`, `rightLen = 3`), the AI Data Feed modal returned:
+  `Preview error: {"detail":[{"type":"less_than_equal","loc":["query","left_len"],"msg":"Input should be less than or equal to 50","input":"100","ctx":{"le":50}}]}`
+- This caused total candles, total zones, active zones, and previews to show 0 or blank.
+
+### Root Cause & Resolution:
+1. **API Validation Limit**:
+   - `backend/api/routes.py` endpoints (`/export/ob-feed`, `/export/ob-zones`, `/export/ob-bundle`, `/export/ob-preview`) had query parameter validators restricted to `le=50`.
+   - Expanded validation constraints across all 4 endpoints from `ge=2, le=50` to `ge=1, le=500`.
+2. **Verification**:
+   - Tested `GET /api/export/ob-preview?symbol=XAUUSD&timeframe=15m&days=90&left_len=100&right_len=3&source_type=wicks`:
+     - Returned **HTTP 200 OK**.
+     - `total_bars`: 7,433
+     - `total_zones`: 235
+     - `active_zones`: 14
+     - `closed_zones`: 221
+     - `bullish_zones`: 89
+     - `bearish_zones`: 146
+   - All download endpoints (`ob-feed`, `ob-zones`, `ob-bundle`) verified returning HTTP 200 with macro swing parameter configuration.
+
+
 
 
 

@@ -72,7 +72,7 @@ LAST_SIMULATION: Dict[str, Any] = {
 class SimulateRequest(BaseModel):
     symbol: str = Field(default="XAUUSD", description="Market symbol e.g. XAUUSD, EURUSD, GBPUSD, BTCUSD")
     timeframe: str = Field(default="15m", description="Bar timeframe: 1m, 5m, 15m, 1h, 1d")
-    lookback: int = Field(default=5, ge=2, le=30, description="Pivot lookback bars")
+    lookback: int = Field(default=5, ge=1, le=500, description="Pivot lookback bars")
     rr_target: float = Field(default=2.5, ge=0.5, le=10.0, description="Dynamic Risk-to-Reward ratio")
     spread: float = Field(default=0.25, ge=0.0, le=5.0, description="Broker spread in quote points")
     days: int = Field(default=30, ge=1, le=365, description="Days of historical data")
@@ -349,8 +349,8 @@ async def export_ob_feed(
     symbol: str = Query("XAUUSD", description="Market symbol e.g. XAUUSD"),
     timeframe: str = Query("15m", description="Candle timeframe e.g. 1m, 5m, 15m, 1h, 1d"),
     days: int = Query(90, ge=1, le=365, description="Historical depth in days"),
-    left_len: int = Query(10, ge=2, le=50, description="Left pivot lookback bars"),
-    right_len: int = Query(10, ge=2, le=50, description="Right pivot lookback bars"),
+    left_len: int = Query(10, ge=1, le=500, description="Left pivot lookback bars"),
+    right_len: int = Query(10, ge=1, le=500, description="Right pivot lookback bars"),
     source_type: str = Query("wicks", description="'wicks' or 'close'")
 ):
     """
@@ -383,8 +383,8 @@ async def export_ob_zones(
     symbol: str = Query("XAUUSD", description="Market symbol e.g. XAUUSD"),
     timeframe: str = Query("15m", description="Candle timeframe e.g. 1m, 5m, 15m, 1h, 1d"),
     days: int = Query(90, ge=1, le=365, description="Historical depth in days"),
-    left_len: int = Query(10, ge=2, le=50, description="Left pivot lookback bars"),
-    right_len: int = Query(10, ge=2, le=50, description="Right pivot lookback bars"),
+    left_len: int = Query(10, ge=1, le=500, description="Left pivot lookback bars"),
+    right_len: int = Query(10, ge=1, le=500, description="Right pivot lookback bars"),
     source_type: str = Query("wicks", description="'wicks' or 'close'")
 ):
     """
@@ -417,8 +417,8 @@ async def export_ob_bundle(
     symbol: str = Query("XAUUSD", description="Market symbol e.g. XAUUSD"),
     timeframe: str = Query("15m", description="Candle timeframe e.g. 1m, 5m, 15m, 1h, 1d"),
     days: int = Query(90, ge=1, le=365, description="Historical depth in days"),
-    left_len: int = Query(10, ge=2, le=50, description="Left pivot lookback bars"),
-    right_len: int = Query(10, ge=2, le=50, description="Right pivot lookback bars"),
+    left_len: int = Query(10, ge=1, le=500, description="Left pivot lookback bars"),
+    right_len: int = Query(10, ge=1, le=500, description="Right pivot lookback bars"),
     source_type: str = Query("wicks", description="'wicks' or 'close'")
 ):
     """
@@ -451,8 +451,8 @@ async def export_ob_preview(
     symbol: str = Query("XAUUSD", description="Market symbol e.g. XAUUSD"),
     timeframe: str = Query("15m", description="Candle timeframe e.g. 1m, 5m, 15m, 1h, 1d"),
     days: int = Query(90, ge=1, le=365, description="Historical depth in days"),
-    left_len: int = Query(10, ge=2, le=50, description="Left pivot lookback bars"),
-    right_len: int = Query(10, ge=2, le=50, description="Right pivot lookback bars"),
+    left_len: int = Query(10, ge=1, le=500, description="Left pivot lookback bars"),
+    right_len: int = Query(10, ge=1, le=500, description="Right pivot lookback bars"),
     source_type: str = Query("wicks", description="'wicks' or 'close'")
 ):
     """
