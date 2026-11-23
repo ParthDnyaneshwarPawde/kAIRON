@@ -1,0 +1,17 @@
+{
+  "id": "IND_PIVOT_OB_INVALIDATION",
+  "name": "Pivot OB with Invalidation",
+  "description": "Pivot Order Blocks with real-time candle close invalidation tracking (Pine Script v6 transpiled).",
+  "color": "#089981",
+  "type": "line",
+  "overlay": true,
+  "language": "javascript",
+  "parameters": {
+    "source": "Wicks",
+    "leftLen": 10,
+    "rightLen": 10,
+    "showLabels": true
+  },
+  "created_at": "2026-11-23T17:15:00Z",
+  "code": "function calculate(candles, params) {\n  params = params || {};\n  const source = params.source || 'Wicks';\n  const leftLen = Number(params.leftLen) || 10;\n  const rightLen = Number(params.rightLen) || 10;\n  const n = candles.length;\n  if (n < leftLen + rightLen + 1) return [];\n\n  const points = [];\n  const bullBoxes = [];\n  const bearBoxes = [];\n\n  for (let i = leftLen + rightLen; i < n; i++) {\n    const k = i - rightLen;\n    const currClose = candles[i].close;\n\n    // 1. Pivot High Check\n    let isPivotHigh = true;\n    const phVal_k = source === 'Wicks' ? candles[k].high : candles[k].close;\n    for (let offset = 1; offset <= leftLen; offset++) {\n      const val = source === 'Wicks' ? candles[k - offset].high : candles[k - offset].close;\n      if (val >= phVal_k) { isPivotHigh = false; break; }\n    }\n    if (isPivotHigh) {\n      for (let offset = 1; offset <= rightLen; offset++) {\n        const val = source === 'Wicks' ? candles[k + offset].high : candles[k + offset].close;\n        if (val > phVal_k) { isPivotHigh = false; break; }\n      }\n    }\n\n    if (isPivotHigh) {\n      bearBoxes.push({\n        top: candles[k].high,\n        bottom: Math.min(candles[k].open, candles[k].close),\n        active: true\n      });\n    }\n\n    // 2. Pivot Low Check\n    let isPivotLow = true;\n    const plVal_k = source === 'Wicks' ? candles[k].low : candles[k].close;\n    for (let offset = 1; offset <= leftLen; offset++) {\n      const val = source === 'Wicks' ? candles[k - offset].low : candles[k - offset].close;\n      if (val <= plVal_k) { isPivotLow = false; break; }\n    }\n    if (isPivotLow) {\n      for (let offset = 1; offset <= rightLen; offset++) {\n        const val = source === 'Wicks' ? candles[k + offset].low : candles[k + offset].close;\n        if (val < plVal_k) { isPivotLow = false; break; }\n      }\n    }\n\n    if (isPivotLow) {\n      bullBoxes.push({\n        top: Math.max(candles[k].open, candles[k].close),\n        bottom: candles[k].low,\n        active: true\n      });\n    }\n\n    // 3. Invalidation\n    for (let b = bullBoxes.length - 1; b >= 0; b--) {\n      if (bullBoxes[b].active && currClose < bullBoxes[b].bottom) {\n        bullBoxes[b].active = false;\n      }\n    }\n\n    for (let b = bearBoxes.length - 1; b >= 0; b--) {\n      if (bearBoxes[b].active && currClose > bearBoxes[b].top) {\n        bearBoxes[b].active = false;\n      }\n    }\n\n    const latestBull = bullBoxes.slice().reverse().find(b => b.active);\n    const latestBear = bearBoxes.slice().reverse().find(b => b.active);\n    let plotVal = currClose;\n    if (latestBull && latestBear) {\n      plotVal = Number(((latestBull.top + latestBear.bottom) / 2).toFixed(2));\n    } else if (latestBull) {\n      plotVal = Number(latestBull.top.toFixed(2));\n    } else if (latestBear) {\n      plotVal = Number(latestBear.bottom.toFixed(2));\n    }\n\n    points.push({\n      time: candles[i].time,\n      value: plotVal\n    });\n  }\n\n  return points;\n}"
+}

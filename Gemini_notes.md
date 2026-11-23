@@ -478,6 +478,37 @@ kAIRON/
 - `POST /api/custom/indicators` -> saves custom indicator JSON to disk.
 - `DELETE /api/custom/indicators/{id}` -> deletes indicator.
 
+---
+
+## Fix: Pivot Order Block Indicator Zones Rendering & Persistence
+- **Timestamp**: 2026-11-23T19:05:00+05:30
+- **Status**: COMPLETED & VERIFIED
+
+### Root Causes Diagnosed:
+1. **Early Return in Section 2 (Position Tool)**:
+   - In `drawTradeBoxes()`, Section 2 (User Position Tool) executed `if (x1Raw === null) return;` and `if (y_entry_raw === null || ...) return;`.
+   - When any active position was scrolled off-screen or unmapped, the early return aborted the entire drawing function before Section 3 (Pivot Order Blocks) was ever reached.
+   - The canvas was wiped by `ctx.clearRect()`, leaving it blank until the user clicked and held to drag the chart back into the position tool's coordinate range.
+2. **Discarding Active Zones Starting Off-Screen**:
+   - Order blocks formed prior to the visible viewport (e.g. 100 bars ago) returned `null` for `timeScale.logicalToCoordinate(z.startBarIndex)`.
+   - Even though these order blocks are active and extend across the visible screen today, the check `if (x1Raw === null) return;` silently dropped them.
+3. **Chart Teardown Cycle on Callback Reference Changes**:
+   - `drawTradeBoxes` and `candles` were in the dependency array of the chart initialization `useEffect`, causing the Lightweight Chart instance to be destroyed and rebuilt repeatedly.
+4. **Missing Multi-Frame Redraw on Idle/Data Load**:
+   - `drawTradeBoxes` was previously only invoked once on mount before Lightweight Charts completed coordinate layout calculations, leaving the canvas blank unless a user triggered the 60fps mousedown loop.
+
+### Corrections Implemented:
+1. **Protected Section 2 from Aborting Section 3**:
+   - Replaced early returns in Section 2 with an enclosed `if (x1Raw !== null && y_entry_raw !== null && y_tp_raw !== null && y_sl_raw !== null)` check so Section 3 (Pivot OB) always executes.
+2. **Spanning Active Order Blocks Across Viewport**:
+   - Active order blocks (`z.endBarIndex === null`) or those extending into the visible range now clamp `x1` to `-10` when their starting bar is off-screen to the left, ensuring seamless rendering across the visible window.
+3. **Stable Ref for Redraw Routine**:
+   - Maintained `drawTradeBoxesRef.current` and decoupled chart creation from callback dependency updates. Chart instance is now stable across data and toggle changes.
+4. **Reliable Multi-Frame Redraw on Load & Release**:
+   - Triggered immediate + secondary RAF ticks and a 60ms timeout whenever candles, configs, or toggles change, guaranteeing zones render when idle without requiring click-and-hold.
+   - Added post-release redraw in `onMouseUpWrapper`.
+
+
 
 
 

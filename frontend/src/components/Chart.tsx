@@ -27,9 +27,20 @@ import {
   Clock,
   Tag,
   Sliders,
-  Sparkles
+  Sparkles,
+  Settings,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { CustomIndicator } from "@/components/CustomIndicatorModal";
+import {
+  computePivotOB,
+  PivotOBConfig,
+  DEFAULT_PIVOT_OB_CONFIG,
+  PivotOBZone,
+  PivotOBConfirmedLabel,
+} from "@/lib/pivotOB";
+import { PivotOBSettingsModal } from "@/components/PivotOBSettingsModal";
 
 export interface ChartApi {
   scrollToTime: (time: number) => void;
@@ -48,6 +59,36 @@ interface InteractivePosition {
   tpPrice: number;
   slPrice: number;
   visible: boolean;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  let c = hex.replace("#", "");
+  if (c.length === 3) {
+    c = c.split("").map((x) => x + x).join("");
+  }
+  const num = parseInt(c, 16);
+  if (isNaN(num)) return `rgba(8, 153, 129, ${alpha})`;
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
 interface ChartProps {
@@ -115,6 +156,35 @@ export const Chart: React.FC<ChartProps> = ({
   const [showZones, setShowZones] = useState<boolean>(true);
   const [showTradeBoxes, setShowTradeBoxes] = useState<boolean>(true);
   const [showTradeMarkers, setShowTradeMarkers] = useState<boolean>(true);
+
+  // Pivot Order Block with Invalidation State (Pine Script v6)
+  const [pivotOBConfig, setPivotOBConfig] = useState<PivotOBConfig>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("kAIRON_pivot_ob_config");
+        if (saved) return JSON.parse(saved);
+      }
+    } catch {}
+    return DEFAULT_PIVOT_OB_CONFIG;
+  });
+  const [isPivotOBSettingsOpen, setIsPivotOBSettingsOpen] = useState<boolean>(false);
+
+  const handleSavePivotOBConfig = (newCfg: PivotOBConfig) => {
+    setPivotOBConfig(newCfg);
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("kAIRON_pivot_ob_config", JSON.stringify(newCfg));
+      }
+    } catch {}
+  };
+
+  // Memoized Pivot OB Calculation
+  const computedPivotOB = React.useMemo(() => {
+    if (!pivotOBConfig.enabled || candles.length === 0) {
+      return { zones: [], labels: [] };
+    }
+    return computePivotOB(candles, pivotOBConfig);
+  }, [candles, pivotOBConfig]);
 
   // User Interactive Freely Draggable Position Tool
   const [userPosition, setUserPosition] = useState<InteractivePosition | null>(null);
@@ -270,7 +340,12 @@ export const Chart: React.FC<ChartProps> = ({
   // Master Trade & Risk-Reward Rendering Routine (Runs at 60fps locked to chart canvas)
   const drawTradeBoxes = useCallback(() => {
     const canvas = overlayCanvasRef.current;
-    if (!canvas || !chartRef.current || !candleSeriesRef.current || !showTradeBoxes) {
+    if (
+      !canvas ||
+      !chartRef.current ||
+      !candleSeriesRef.current ||
+      (!showTradeBoxes && !pivotOBConfig.enabled && (!userPositionRef.current || !userPositionRef.current.visible))
+    ) {
       if (canvas) {
         const ctx = canvas.getContext("2d");
         ctx?.clearRect(0, 0, canvas.width, canvas.height);
@@ -300,7 +375,7 @@ export const Chart: React.FC<ChartProps> = ({
     const bounds: typeof tradeBoxesBoundsRef.current = [];
 
     // 1. Render strategy trades (pinned to logical bar coordinates and prices)
-    if (trades && trades.length > 0 && candles.length > 0) {
+    if (showTradeBoxes && trades && trades.length > 0 && candles.length > 0) {
       const recentTrades = trades.slice(-35);
 
       recentTrades.forEach((t) => {
@@ -385,102 +460,228 @@ export const Chart: React.FC<ChartProps> = ({
     if (currentPos && currentPos.visible) {
       const pos = currentPos;
       const x1Raw = timeScale.logicalToCoordinate(pos.entryBarIndex as any);
-      if (x1Raw === null) return;
-      const x1 = Number(x1Raw);
-
-      const x2Raw = timeScale.logicalToCoordinate((pos.entryBarIndex + pos.barSpan) as any);
-      let x2 = x2Raw !== null ? Number(x2Raw) : x1 + 120;
-      if (x2 <= x1) x2 = x1 + 80;
-
       const y_entry_raw = series.priceToCoordinate(pos.entryPrice);
       const y_tp_raw = series.priceToCoordinate(pos.tpPrice);
       const y_sl_raw = series.priceToCoordinate(pos.slPrice);
 
-      if (y_entry_raw === null || y_tp_raw === null || y_sl_raw === null) return;
+      // Only draw position tool if its prices can be plotted on screen; NEVER early-return from the whole routine!
+      if (x1Raw !== null && y_entry_raw !== null && y_tp_raw !== null && y_sl_raw !== null) {
+        const x1 = Number(x1Raw);
+        const x2Raw = timeScale.logicalToCoordinate((pos.entryBarIndex + pos.barSpan) as any);
+        let x2 = x2Raw !== null ? Number(x2Raw) : x1 + 120;
+        if (x2 <= x1) x2 = x1 + 80;
 
-      const y_entry = Number(y_entry_raw);
-      const y_tp = Number(y_tp_raw);
-      const y_sl = Number(y_sl_raw);
+        const y_entry = Number(y_entry_raw);
+        const y_tp = Number(y_tp_raw);
+        const y_sl = Number(y_sl_raw);
 
-      const isBuy = pos.type === "BUY";
-      const width = Math.max(35, x2 - x1);
-      const centerX = x1 + width / 2;
+        const isBuy = pos.type === "BUY";
+        const width = Math.max(35, x2 - x1);
+        const centerX = x1 + width / 2;
 
-      // TARGET GREEN AREA
-      const targetTop = isBuy ? y_tp : y_entry;
-      const targetHeight = Math.max(2, Math.abs(y_entry - y_tp));
+        // TARGET GREEN AREA
+        const targetTop = isBuy ? y_tp : y_entry;
+        const targetHeight = Math.max(2, Math.abs(y_entry - y_tp));
 
-      ctx.fillStyle = "rgba(8, 153, 129, 0.28)";
-      ctx.fillRect(x1, targetTop, width, targetHeight);
-      ctx.strokeStyle = "#089981";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(x1, targetTop, width, targetHeight);
+        ctx.fillStyle = "rgba(8, 153, 129, 0.28)";
+        ctx.fillRect(x1, targetTop, width, targetHeight);
+        ctx.strokeStyle = "#089981";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x1, targetTop, width, targetHeight);
 
-      // STOP LOSS RED AREA
-      const stopTop = isBuy ? y_entry : y_sl;
-      const stopHeight = Math.max(2, Math.abs(y_entry - y_sl));
+        // STOP LOSS RED AREA
+        const stopTop = isBuy ? y_entry : y_sl;
+        const stopHeight = Math.max(2, Math.abs(y_entry - y_sl));
 
-      ctx.fillStyle = "rgba(242, 54, 69, 0.28)";
-      ctx.fillRect(x1, stopTop, width, stopHeight);
-      ctx.strokeStyle = "#f23645";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(x1, stopTop, width, stopHeight);
+        ctx.fillStyle = "rgba(242, 54, 69, 0.28)";
+        ctx.fillRect(x1, stopTop, width, stopHeight);
+        ctx.strokeStyle = "#f23645";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x1, stopTop, width, stopHeight);
 
-      // ENTRY LINE
-      ctx.beginPath();
-      ctx.strokeStyle = "#38bdf8";
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([3, 2]);
-      ctx.moveTo(x1, y_entry);
-      ctx.lineTo(x1 + width, y_entry);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // INTERACTIVE HANDLES (Grab & Drag Circles)
-      const drawHandle = (hx: number, hy: number, color: string) => {
+        // ENTRY LINE
         ctx.beginPath();
-        ctx.arc(hx, hy, 5, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 2]);
+        ctx.moveTo(x1, y_entry);
+        ctx.lineTo(x1 + width, y_entry);
         ctx.stroke();
-      };
+        ctx.setLineDash([]);
 
-      // Top TP handle
-      drawHandle(centerX, y_tp, "#089981");
-      // Bottom SL handle
-      drawHandle(centerX, y_sl, "#f23645");
-      // Middle Entry handle
-      drawHandle(centerX, y_entry, "#38bdf8");
-      // Right edge duration handle
-      drawHandle(x1 + width, y_entry, "#ffffff");
+        // INTERACTIVE HANDLES (Grab & Drag Circles)
+        const drawHandle = (hx: number, hy: number, color: string) => {
+          ctx.beginPath();
+          ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        };
 
-      // LABELS & QUANT SUMMARY BOX
-      const profitPts = Math.abs(pos.tpPrice - pos.entryPrice);
-      const riskPts = Math.abs(pos.entryPrice - pos.slPrice);
-      const rr = riskPts > 0 ? (profitPts / riskPts).toFixed(2) : "1.00";
+        // Top TP handle
+        drawHandle(centerX, y_tp, "#089981");
+        // Bottom SL handle
+        drawHandle(centerX, y_sl, "#f23645");
+        // Middle Entry handle
+        drawHandle(centerX, y_entry, "#38bdf8");
+        // Right edge duration handle
+        drawHandle(x1 + width, y_entry, "#ffffff");
 
-      ctx.font = "bold 10px monospace";
-      // Target Label
-      ctx.fillStyle = "#089981";
-      ctx.fillText(`TARGET: ${pos.tpPrice.toFixed(2)} (+${profitPts.toFixed(2)} pts)`, x1 + 6, targetTop + 14);
+        // LABELS & QUANT SUMMARY BOX
+        const profitPts = Math.abs(pos.tpPrice - pos.entryPrice);
+        const riskPts = Math.abs(pos.entryPrice - pos.slPrice);
+        const rr = riskPts > 0 ? (profitPts / riskPts).toFixed(2) : "1.00";
 
-      // Stop Loss Label
-      ctx.fillStyle = "#f23645";
-      ctx.fillText(`STOP: ${pos.slPrice.toFixed(2)} (-${riskPts.toFixed(2)} pts)`, x1 + 6, stopTop + stopHeight - 6);
+        ctx.font = "bold 10px monospace";
+        // Target Label
+        ctx.fillStyle = "#089981";
+        ctx.fillText(`TARGET: ${pos.tpPrice.toFixed(2)} (+${profitPts.toFixed(2)} pts)`, x1 + 6, targetTop + 14);
 
-      // Risk-Reward HUD Pill inside box
-      const tagText = `${pos.type === "BUY" ? "LONG" : "SHORT"} | RR 1 : ${rr}`;
-      ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
-      ctx.fillRect(x1 + 6, y_entry - 18, 120, 15);
-      ctx.strokeStyle = "#38bdf8";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x1 + 6, y_entry - 18, 120, 15);
-      ctx.fillStyle = "#38bdf8";
-      ctx.fillText(tagText, x1 + 10, y_entry - 7);
+        // Stop Loss Label
+        ctx.fillStyle = "#f23645";
+        ctx.fillText(`STOP: ${pos.slPrice.toFixed(2)} (-${riskPts.toFixed(2)} pts)`, x1 + 6, stopTop + stopHeight - 6);
+
+        // Risk-Reward HUD Pill inside box
+        const tagText = `${pos.type === "BUY" ? "LONG" : "SHORT"} | RR 1 : ${rr}`;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+        ctx.fillRect(x1 + 6, y_entry - 18, 120, 15);
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x1 + 6, y_entry - 18, 120, 15);
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillText(tagText, x1 + 10, y_entry - 7);
+      }
     }
-  }, [trades, showTradeBoxes, candles]);
+
+    // 3. Render Pivot Order Block Rectangular Zones (Pine Script v6)
+    if (pivotOBConfig.enabled && computedPivotOB.zones.length > 0) {
+      const visibleRange = timeScale.getVisibleLogicalRange();
+      const visFrom = visibleRange ? visibleRange.from : 0;
+      const visTo = visibleRange ? visibleRange.to : candles.length;
+
+      computedPivotOB.zones.forEach((z) => {
+        // Skip historical zones that ended before the visible left edge
+        if (z.endBarIndex !== null && z.endBarIndex < visFrom) return;
+        // Skip future zones that start after the visible right edge
+        if (z.startBarIndex > visTo + 10) return;
+
+        const x1Raw = timeScale.logicalToCoordinate(z.startBarIndex as any);
+        let x1: number;
+        if (x1Raw !== null) {
+          x1 = Number(x1Raw);
+        } else {
+          // If start bar is off-screen to the left, but zone extends into visible view or is active:
+          if (z.endBarIndex === null || z.endBarIndex >= visFrom) {
+            x1 = -10; // start slightly off left canvas edge so it seamlessly spans into view
+          } else {
+            return;
+          }
+        }
+
+        let x2: number;
+        if (z.endBarIndex !== null) {
+          const x2Raw = timeScale.logicalToCoordinate(z.endBarIndex as any);
+          x2 = x2Raw !== null ? Number(x2Raw) : rect.width;
+        } else {
+          // Active zone extends to the right edge of the chart
+          x2 = rect.width;
+        }
+        if (x2 <= x1) x2 = x1 + 8;
+
+        const yTopRaw = series.priceToCoordinate(z.top);
+        const yBottomRaw = series.priceToCoordinate(z.bottom);
+        if (yTopRaw === null || yBottomRaw === null) return;
+
+        const yTop = Number(yTopRaw);
+        const yBottom = Number(yBottomRaw);
+        const boxY = Math.min(yTop, yBottom);
+        const boxH = Math.max(2, Math.abs(yBottom - yTop));
+        const boxW = Math.max(4, x2 - x1);
+
+        const isBull = z.type === "bullish";
+        const baseColor = isBull ? pivotOBConfig.bullishColor : pivotOBConfig.bearishColor;
+
+        // Semi-transparent box background
+        ctx.fillStyle = hexToRgba(baseColor, pivotOBConfig.opacity);
+        ctx.fillRect(x1, boxY, boxW, boxH);
+
+        // Solid clean border
+        ctx.strokeStyle = hexToRgba(baseColor, 0.85);
+        ctx.lineWidth = pivotOBConfig.borderWidth;
+        ctx.strokeRect(x1, boxY, boxW, boxH);
+      });
+
+      // Render "CONFIRMED" labels matching TradingView
+      if (pivotOBConfig.showLabels && computedPivotOB.labels.length > 0) {
+        computedPivotOB.labels.forEach((lbl) => {
+          const lxRaw = timeScale.logicalToCoordinate(lbl.barIndex as any);
+          const lyRaw = series.priceToCoordinate(lbl.price);
+          if (lxRaw === null || lyRaw === null) return;
+          const lx = Number(lxRaw);
+          const ly = Number(lyRaw);
+
+          const isBull = lbl.type === "bullish";
+          const tagColor = isBull ? pivotOBConfig.bullishColor : pivotOBConfig.bearishColor;
+          const pillW = 58;
+          const pillH = 15;
+          const pillX = lx - pillW / 2;
+          const pillY = isBull ? ly + 6 : ly - pillH - 6;
+
+          // Directional pointer triangle
+          ctx.beginPath();
+          ctx.fillStyle = tagColor;
+          if (isBull) {
+            ctx.moveTo(lx, ly);
+            ctx.lineTo(lx - 4, ly + 6);
+            ctx.lineTo(lx + 4, ly + 6);
+          } else {
+            ctx.moveTo(lx, ly);
+            ctx.lineTo(lx - 4, ly - 6);
+            ctx.lineTo(lx + 4, ly - 6);
+          }
+          ctx.closePath();
+          ctx.fill();
+
+          // Pill tag
+          drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 3);
+          ctx.fillStyle = tagColor;
+          ctx.fill();
+
+          // Centered white text
+          ctx.font = "bold 8px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+          ctx.fillStyle = "#ffffff";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("CONFIRMED", lx, pillY + pillH / 2 + 0.5);
+          ctx.textAlign = "start";
+          ctx.textBaseline = "alphabetic";
+        });
+      }
+    }
+  }, [trades, showTradeBoxes, candles, computedPivotOB, pivotOBConfig]);
+
+  // Keep stable refs to avoid recreating the chart when callbacks update
+  const drawTradeBoxesRef = useRef(drawTradeBoxes);
+  useEffect(() => {
+    drawTradeBoxesRef.current = drawTradeBoxes;
+  });
+
+  const createDraggablePositionRef = useRef(createDraggablePosition);
+  useEffect(() => {
+    createDraggablePositionRef.current = createDraggablePosition;
+  });
+
+  // Re-draw overlay whenever Pivot OB data, config, trades, or toggles change
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      drawTradeBoxesRef.current();
+      requestAnimationFrame(drawTradeBoxesRef.current);
+    });
+    const t = setTimeout(() => drawTradeBoxesRef.current(), 60);
+    return () => clearTimeout(t);
+  }, [computedPivotOB, pivotOBConfig, trades, showTradeBoxes]);
 
   // 1. Initialize Chart
   useEffect(() => {
@@ -643,10 +844,10 @@ export const Chart: React.FC<ChartProps> = ({
 
     // TimeScale subscriptions for dynamic redraw of trade projection boxes
     chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-      requestAnimationFrame(drawTradeBoxes);
+      requestAnimationFrame(drawTradeBoxesRef.current);
     });
     chart.timeScale().subscribeVisibleTimeRangeChange(() => {
-      requestAnimationFrame(drawTradeBoxes);
+      requestAnimationFrame(drawTradeBoxesRef.current);
     });
 
     // Resize Observer
@@ -657,7 +858,7 @@ export const Chart: React.FC<ChartProps> = ({
       if (!entries || entries.length === 0) return;
       const { width, height } = entries[0].contentRect;
       chart.applyOptions({ width, height });
-      requestAnimationFrame(drawTradeBoxes);
+      requestAnimationFrame(drawTradeBoxesRef.current);
     });
     resizeObserver.observe(wrapperEl);
 
@@ -667,7 +868,7 @@ export const Chart: React.FC<ChartProps> = ({
       isMouseDown = true;
       const loop = () => {
         if (!isMouseDown) return;
-        drawTradeBoxes();
+        drawTradeBoxesRef.current();
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
@@ -675,11 +876,12 @@ export const Chart: React.FC<ChartProps> = ({
 
     const onMouseUpWrapper = () => {
       isMouseDown = false;
-      requestAnimationFrame(drawTradeBoxes);
+      requestAnimationFrame(drawTradeBoxesRef.current);
+      setTimeout(() => drawTradeBoxesRef.current(), 50);
     };
 
     const onWheelWrapper = () => {
-      requestAnimationFrame(drawTradeBoxes);
+      requestAnimationFrame(drawTradeBoxesRef.current);
     };
 
     wrapperEl.addEventListener("mousedown", onMouseDownWrapper);
@@ -697,23 +899,23 @@ export const Chart: React.FC<ChartProps> = ({
               from: Math.max(0, idx - 40),
               to: Math.min(candles.length + 10, idx + 40),
             });
-            requestAnimationFrame(drawTradeBoxes);
+            requestAnimationFrame(drawTradeBoxesRef.current);
           }
         },
         fitContent: () => {
           if (chartRef.current) {
             chartRef.current.timeScale().fitContent();
-            requestAnimationFrame(drawTradeBoxes);
+            requestAnimationFrame(drawTradeBoxesRef.current);
           }
         },
         jumpToLive: () => {
           if (chartRef.current && candles.length > 0) {
             chartRef.current.timeScale().scrollToPosition(-8, true);
-            requestAnimationFrame(drawTradeBoxes);
+            requestAnimationFrame(drawTradeBoxesRef.current);
           }
         },
         createPositionTool: () => {
-          createDraggablePosition();
+          createDraggablePositionRef.current();
         },
       });
     }
@@ -730,7 +932,7 @@ export const Chart: React.FC<ChartProps> = ({
         chartRef.current = null;
       }
     };
-  }, [symbol, timeframe, drawTradeBoxes, createDraggablePosition, candles]);
+  }, [symbol, timeframe]);
 
   // 2. Load Candles (Preserves Viewport / Zoom without disturbing the screen on refresh!)
   useEffect(() => {
@@ -819,9 +1021,13 @@ export const Chart: React.FC<ChartProps> = ({
           });
         }
       }
-      requestAnimationFrame(drawTradeBoxes);
+      requestAnimationFrame(() => {
+        drawTradeBoxesRef.current();
+        requestAnimationFrame(drawTradeBoxesRef.current);
+      });
+      setTimeout(() => drawTradeBoxesRef.current(), 80);
     });
-  }, [candles, symbol, timeframe, drawTradeBoxes]);
+  }, [candles, symbol, timeframe]);
 
   // 3. Trade Markers (Controlled by showTradeMarkers toggle)
   useEffect(() => {
@@ -932,8 +1138,8 @@ export const Chart: React.FC<ChartProps> = ({
       });
     }
 
-    requestAnimationFrame(drawTradeBoxes);
-  }, [liveTick, timeframe, drawTradeBoxes]);
+    requestAnimationFrame(drawTradeBoxesRef.current);
+  }, [liveTick, timeframe]);
 
   // 6. Dynamic Custom Indicators Series Rendering
   useEffect(() => {
@@ -1439,15 +1645,29 @@ export const Chart: React.FC<ChartProps> = ({
             EMA50
           </button>
 
-          <button
-            onClick={() => setShowZones(!showZones)}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
-              showZones ? "text-[#089981] bg-[#089981]/10" : "text-slate-500 hover:text-slate-300"
-            }`}
-            title="Toggle Pivot Order Block Zones"
-          >
-            OB Zones ({zones.length})
-          </button>
+          <div className="flex items-center space-x-0.5 bg-[#171b26] rounded border border-[#2a2e39] p-0.5">
+            <button
+              onClick={() =>
+                setPivotOBConfig((prev) => ({ ...prev, enabled: !prev.enabled }))
+              }
+              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all flex items-center space-x-1 ${
+                pivotOBConfig.enabled
+                  ? "bg-[#089981]/25 text-[#089981] shadow-xs"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+              title="Toggle Pivot OB with Invalidation (Pine Script v6)"
+            >
+              <Sparkles className="w-3 h-3 text-[#089981]" />
+              <span>Pivot OB ({computedPivotOB.zones.length})</span>
+            </button>
+            <button
+              onClick={() => setIsPivotOBSettingsOpen(true)}
+              className="p-1 text-slate-400 hover:text-white hover:bg-[#2a2e39] rounded transition-colors"
+              title="Pivot OB Settings (Source, Lengths, Colors, Visibility)"
+            >
+              <Settings className="w-3 h-3" />
+            </button>
+          </div>
 
           <div className="h-3 w-px bg-[#2a2e39] mx-0.5" />
 
@@ -1525,6 +1745,50 @@ export const Chart: React.FC<ChartProps> = ({
           </div>
         )}
 
+        {/* TradingView Legend for Pivot OB with Invalidation (Matches TV UI Screenshot) */}
+        <div
+          className={`absolute ${
+            liveTick ? "top-12" : "top-3"
+          } left-3 z-20 group flex items-center space-x-2 bg-[#131722]/85 hover:bg-[#131722] backdrop-blur-md px-2.5 py-1 rounded border border-[#2a2e39] text-[11px] font-mono select-none transition-all shadow-md`}
+        >
+          <div className="flex items-center space-x-1.5 text-slate-300">
+            <span
+              className="w-2 h-2 rounded-full inline-block"
+              style={{ backgroundColor: pivotOBConfig.bullishColor }}
+            />
+            <span className="font-semibold text-white tracking-tight">
+              Pivot OB with Invalidation
+            </span>
+            <span className="text-slate-400 text-[10px]">
+              {pivotOBConfig.source} {pivotOBConfig.leftLen} {pivotOBConfig.rightLen}
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-0.5 opacity-70 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() =>
+                setPivotOBConfig((prev) => ({ ...prev, enabled: !prev.enabled }))
+              }
+              className="p-1 hover:text-white text-slate-400 hover:bg-[#2a2e39] rounded transition-colors"
+              title={pivotOBConfig.enabled ? "Hide Indicator" : "Show Indicator"}
+            >
+              {pivotOBConfig.enabled ? (
+                <Eye className="w-3.5 h-3.5 text-[#38bdf8]" />
+              ) : (
+                <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+              )}
+            </button>
+
+            <button
+              onClick={() => setIsPivotOBSettingsOpen(true)}
+              className="p-1 hover:text-white text-slate-400 hover:bg-[#2a2e39] rounded transition-colors"
+              title="Settings (Source, Lengths, Colors, Visibility)"
+            >
+              <Settings className="w-3.5 h-3.5 text-slate-300 hover:text-white" />
+            </button>
+          </div>
+        </div>
+
         {/* Floating Navigation Toolbar (Bottom-Right) */}
         <div className="absolute bottom-4 right-20 z-20 flex items-center space-x-1 bg-[#1e222d]/90 backdrop-blur-sm border border-[#2a2e39] rounded-lg p-1 shadow-2xl">
           {/* Small Refresh Button */}
@@ -1579,6 +1843,14 @@ export const Chart: React.FC<ChartProps> = ({
           </svg>
         </div>
       </div>
+
+      {/* TradingView Style Settings Modal for Pivot OB with Invalidation */}
+      <PivotOBSettingsModal
+        isOpen={isPivotOBSettingsOpen}
+        onClose={() => setIsPivotOBSettingsOpen(false)}
+        config={pivotOBConfig}
+        onSaveConfig={handleSavePivotOBConfig}
+      />
     </div>
   );
 };
